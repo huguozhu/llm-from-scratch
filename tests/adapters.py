@@ -4,7 +4,6 @@ import os
 import sys
 from typing import IO, Any, BinaryIO, Type
 from collections.abc import Iterable
-from einx import op
 from jaxtyping import Float, Int
 
 import numpy.typing as npt
@@ -166,9 +165,13 @@ def run_multihead_self_attention_with_rope(
     from llm.transformer import MultiHeadAttentionWithRoPE
     import torch
 
-    mha = MultiHeadAttentionWithRoPE(d_model=d_model, num_head=num_heads, max_seq_len=max_seq_len, theta=theta)
+    mha = MultiHeadAttentionWithRoPE(
+        d_model=d_model, num_head=num_heads, max_seq_len=max_seq_len, theta=theta
+    )
 
-    combined_qkv_weight = torch.cat([q_proj_weight, k_proj_weight, v_proj_weight], dim=0)
+    combined_qkv_weight = torch.cat(
+        [q_proj_weight, k_proj_weight, v_proj_weight], dim=0
+    )
     mha.project.w.data = combined_qkv_weight
     mha.out_linear.w.data = o_proj_weight
 
@@ -260,7 +263,13 @@ def run_transformer_block(
     """
     from llm.transformer import TransformerBlock
 
-    ts = TransformerBlock(d_model=d_model, num_heads=num_heads, d_ff=d_ff, max_seq_len=max_seq_len, theta=theta)
+    ts = TransformerBlock(
+        d_model=d_model,
+        num_heads=num_heads,
+        d_ff=d_ff,
+        max_seq_len=max_seq_len,
+        theta=theta,
+    )
 
     q_proj_weight = weights["attn.q_proj.weight"]
     k_proj_weight = weights["attn.k_proj.weight"]
@@ -274,7 +283,9 @@ def run_transformer_block(
     ffn2_weight = weights["ffn.w2.weight"]
     ffn3_weight = weights["ffn.w3.weight"]
 
-    combined_qkv_weight = torch.cat([q_proj_weight, k_proj_weight, v_proj_weight], dim=0)
+    combined_qkv_weight = torch.cat(
+        [q_proj_weight, k_proj_weight, v_proj_weight], dim=0
+    )
     ts.mult_head_atten.project.w.data = combined_qkv_weight
     ts.mult_head_atten.out_linear.w.data = o_proj_weight
 
@@ -400,7 +411,9 @@ def run_transformer_lm(
         ffn2_weight = weights[f"layers.{layer}.ffn.w2.weight"]
         ffn3_weight = weights[f"layers.{layer}.ffn.w3.weight"]
 
-        combined_qkv_weight = torch.cat([q_proj_weight, k_proj_weight, v_proj_weight], dim=0)
+        combined_qkv_weight = torch.cat(
+            [q_proj_weight, k_proj_weight, v_proj_weight], dim=0
+        )
 
         ts.blocks[layer].mult_head_atten.project.w.data = combined_qkv_weight
         ts.blocks[layer].mult_head_atten.out_linear.w.data = o_proj_weight
@@ -480,7 +493,9 @@ def run_get_batch(
     """
     from llm.training import get_batch
 
-    return get_batch(dataset, batch_size=batch_size, context_length=context_length, device=device)
+    return get_batch(
+        dataset, batch_size=batch_size, context_length=context_length, device=device
+    )
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -510,7 +525,9 @@ def run_cross_entropy(
     return CrossEntropyLoss()(inputs, targets)
 
 
-def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
+def run_gradient_clipping(
+    parameters: Iterable[torch.nn.Parameter], max_l2_norm: float
+) -> None:
     """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
 
     Args:
@@ -668,7 +685,9 @@ def run_train_bpe(
                 Merges are ordered by order of creation.
     """
     tokenizer = BpeTokenizer()
-    return tokenizer.train(input_path, vocab_size=vocab_size, special_tokens=special_tokens)
+    return tokenizer.train(
+        input_path, vocab_size=vocab_size, special_tokens=special_tokens
+    )
 
 
 def get_flashattention_autograd_function_pytorch() -> Type:
@@ -681,7 +700,9 @@ def get_flashattention_autograd_function_pytorch() -> Type:
         A class object (not an instance of the class)
     """
     # For example: return MyFlashAttnAutogradFunctionClass
-    raise NotImplementedError
+    from kernel import FlashAttentionMock
+
+    return FlashAttentionMock
 
 
 def get_flashattention_autograd_function_triton() -> Type:
@@ -696,8 +717,9 @@ def get_flashattention_autograd_function_triton() -> Type:
     Returns:
         A class object (not an instance of the class)
     """
-    # For example: return MyTritonFlashAttentionAutogradFunctionClass
-    raise NotImplementedError
+    from kernel import FlashAttention
+
+    return FlashAttention
 
 
 def get_ddp_individual_parameters(module: torch.nn.Module) -> torch.nn.Module:
@@ -721,7 +743,9 @@ def get_ddp_individual_parameters(module: torch.nn.Module) -> torch.nn.Module:
     raise NotImplementedError
 
 
-def ddp_individual_parameters_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
+def ddp_individual_parameters_on_after_backward(
+    ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer
+):
     """
     Code to run after the backward pass is completed, but before we take
     an optimizer step.
@@ -757,7 +781,9 @@ def get_ddp_bucketed(module: torch.nn.Module, bucket_size_mb: float) -> torch.nn
     raise NotImplementedError
 
 
-def ddp_bucketed_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
+def ddp_bucketed_on_after_backward(
+    ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer
+):
     """
     Code to run after the backward pass is completed, but before we take
     an optimizer step.
@@ -772,7 +798,9 @@ def ddp_bucketed_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.
     raise NotImplementedError
 
 
-def ddp_bucketed_on_train_batch_start(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
+def ddp_bucketed_on_train_batch_start(
+    ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer
+):
     """
     Code to run at the very start of the training step.
 
@@ -785,7 +813,9 @@ def ddp_bucketed_on_train_batch_start(ddp_model: torch.nn.Module, optimizer: tor
     raise NotImplementedError
 
 
-def get_sharded_optimizer(params, optimizer_cls: Type[torch.optim.Optimizer], **kwargs) -> torch.optim.Optimizer:
+def get_sharded_optimizer(
+    params, optimizer_cls: Type[torch.optim.Optimizer], **kwargs
+) -> torch.optim.Optimizer:
     """
     Returns a torch.optim.Optimizer that handles optimizer state sharding
     of the given optimizer_cls on the provided parameters.
