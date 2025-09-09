@@ -11,6 +11,7 @@
     *   **RMSNorm：** 用于高效稳定的层归一化。
     *   **SwiGLU：** 前馈网络中的激活函数，以提高性能。
     *   **旋转位置嵌入 (RoPE)：** 用于有效的位置编码。
+*   **Flash Attention 2：** 包含 Flash Attention 2 的 Triton 实现，显著提高了性能和内存效率。
 *   **分布式训练:** 支持使用分布式数据并行 (DDP) 在多个 GPU 上进行训练。
 *   **自定义 BPE 分词器：** 从零开始实现的字节对编码 (BPE) 分词器，可以在任何文本语料库上进行训练。
 *   **自定义优化器：** 包括 `AdamW` 和 `SGDDecay` 优化器的自定义实现。
@@ -51,6 +52,12 @@
 *   **`SGDDecay`**：带有学习率衰减的 SGD 的自定义实现。
 *   **`cos_lr_scheduler`**：带有预热的余弦学习率调度器。
 *   **`gradient_clip`**：用于梯度裁剪的函数。
+
+### 内核优化 (`kernel/`)
+
+*   **`flash_attention_triton.py`**：Flash Attention 2 的 Triton 实现，以提高性能和内存效率。
+*   **`flash_attention_mock.py`**：Flash Attention 的模拟实现，用于比较和测试。
+*   **`bench_mark/`**：一套基准测试，用于比较不同注意力实现和模型组件的性能。
 
 ## 架构
 

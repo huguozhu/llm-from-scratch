@@ -11,6 +11,7 @@ This repository contains a from-scratch implementation of a modern decoder-only 
   * **RMSNorm:** for efficient and stable layer normalization.
   * **SwiGLU:** activation function in the feed-forward network for improved performance.
   * **Rotary Position Embeddings (RoPE):** for effective positional encoding.
+* **Flash Attention 2:** Includes a Triton implementation of Flash Attention 2, significantly improving performance and memory efficiency.
 * **Distributed Training:** Supports Distributed Data Parallel (DDP) for training on multiple GPUs.
 * **Custom BPE Tokenizer:** A from-scratch implementation of the Byte Pair Encoding (BPE) tokenizer, which can be trained on any text corpus.
 * **Custom Optimizers:** Includes custom implementations of `AdamW` and `SGDDecay` optimizers.
@@ -51,6 +52,12 @@ This project provides a complete ecosystem for building and training a language 
 * **`SGDDecay`**: A custom implementation of SGD with learning rate decay.
 * **`cos_lr_scheduler`**: A cosine learning rate scheduler with warmup.
 * **`gradient_clip`**: A function for gradient clipping.
+
+### Kernel Optimizations (`kernel/`)
+
+* **`flash_attention_triton.py`**: A Triton implementation of Flash Attention 2 for improved performance and memory efficiency.
+* **`flash_attention_mock.py`**: A mock implementation of flash attention for comparison and testing.
+* **`bench_mark/`**: A suite of benchmarks to compare the performance of different attention implementations and model components.
 
 ## Architecture
 
