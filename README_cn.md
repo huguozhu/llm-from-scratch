@@ -6,17 +6,17 @@
 
 ## 特性
 
-*   **从零开始实现：** Transformer 模型的每个组件都使用 PyTorch 从零开始实现，从而深入理解其底层机制。
-*   **现代化架构：** 该模型融合了最先进语言模型中使用的现代技术，包括：
-    *   **RMSNorm：** 用于高效稳定的层归一化。
-    *   **SwiGLU：** 前馈网络中的激活函数，以提高性能。
-    *   **旋转位置嵌入 (RoPE)：** 用于有效的位置编码。
-*   **Flash Attention 2：** 包含 Flash Attention 2 的 Triton 实现，显著提高了性能和内存效率。
-*   **分布式训练:** 支持使用分布式数据并行 (DDP) 在多个 GPU 上进行训练。
-*   **自定义 BPE 分词器：** 从零开始实现的字节对编码 (BPE) 分词器，可以在任何文本语料库上进行训练。
-*   **自定义优化器：** 包括 `AdamW` 和 `SGDDecay` 优化器的自定义实现。
-*   **全面的训练和生成脚本：** 提供用于在大型语料库上训练模型以及使用训练好的模型生成文本的脚本。
-*   **完备的测试：** 使用 `pytest` 和快照测试的全面测试套件确保了实现的正确性。
+* **从零开始实现：** Transformer 模型的每个组件都使用 PyTorch 从零开始实现，从而深入理解其底层机制。
+* **现代化架构：** 该模型融合了最先进语言模型中使用的现代技术，包括：
+  * **RMSNorm：** 用于高效稳定的层归一化。
+  * **SwiGLU：** 前馈网络中的激活函数，以提高性能。
+  * **旋转位置嵌入 (RoPE)：** 用于有效的位置编码。
+* **Flash Attention 2：** 包含 Flash Attention 2 的 Triton 实现，显著提高了性能和内存效率。
+* **分布式训练:** 支持使用分布式数据并行 (DDP) 在多个 GPU 上进行训练。
+* **自定义 BPE 分词器：** 从零开始实现的字节对编码 (BPE) 分词器，可以在任何文本语料库上进行训练。
+* **自定义优化器：** 包括 `AdamW` 和 `SGDDecay` 优化器的自定义实现。
+* **全面的训练和生成脚本：** 提供用于在大型语料库上训练模型以及使用训练好的模型生成文本的脚本。
+* **完备的测试：** 使用 `pytest` 和快照测试的全面测试套件确保了实现的正确性。
 
 ## 已实现的组件
 
@@ -24,48 +24,53 @@
 
 ### 核心模型 (`llm/transformer.py`)
 
-*   **`Transformer`**：组合所有组件的主模型类。
-*   **`TransformerBlock`**：Transformer 的单个模块，包含多头注意力和前馈网络。
-*   **`MultiHeadAttention`**：多头自注意力机制。
-*   **`ScaledDotProductAttention`**：核心注意力机制。
-*   **`FFN`**：带有 SwiGLU 激活函数的位置前馈网络。
-*   **`RoPE`**：用于注入位置信息的旋转位置嵌入。
-*   **`RmsNorm`**：均方根层归一化。
-*   **`Embedding`**：词元嵌入层。
-*   **`Linear`**：自定义线性层。
-*   **`Softmax`**：自定义 softmax 实现。
-*   **`CrossEntropyLoss`**：自定义交叉熵损失函数。
+* **`Transformer`**：组合所有组件的主模型类。
+* **`TransformerBlock`**：Transformer 的单个模块，包含多头注意力和前馈网络。
+* **`MultiHeadAttention`**：多头自注意力机制。
+* **`ScaledDotProductAttention`**：核心注意力机制。
+* **`FFN`**：带有 SwiGLU 激活函数的位置前馈网络。
+* **`RoPE`**：用于注入位置信息的旋转位置嵌入。
+* **`RmsNorm`**：均方根层归一化。
+* **`Embedding`**：词元嵌入层。
+* **`Linear`**：自定义线性层。
+* **`Softmax`**：自定义 softmax 实现。
+* **`CrossEntropyLoss`**：自定义交叉熵损失函数。
 
 ### 分词器 (`llm/bpe_tokenizer.py`)
 
-*   **`BpeTokenizer`**：从零开始实现的 BPE 分词器。它可以在语料库上进行训练，以学习词汇表和合并规则。它还支持特殊词元。
+* **`BpeTokenizer`**：从零开始实现的 BPE 分词器。它可以在语料库上进行训练，以学习词汇表和合并规则。它还支持特殊词元。
 
 ### 训练与推理
 
-*   **`llm/training.py`**：用于训练 Transformer 模型的脚本。它包括数据加载、训练循环、验证和检查点。
-*   **`llm/generating.py`**：用于使用训练好的模型通过 top-p 采样生成文本的脚本。
-*   **`llm/checkpoint.py`**：用于保存和加载模型检查点的实用工具。
+* **`llm/training.py`**：用于训练 Transformer 模型的脚本。它包括数据加载、训练循环、验证和检查点。
+* **`llm/generating.py`**：用于使用训练好的模型通过 top-p 采样生成文本的脚本。
+* **`llm/checkpoint.py`**：用于保存和加载模型检查点的实用工具。
 
 ### 优化器和实用工具 (`llm/transformer.py`)
 
-*   **`AdamW`**：AdamW 优化器的自定义实现。
-*   **`SGDDecay`**：带有学习率衰减的 SGD 的自定义实现。
-*   **`cos_lr_scheduler`**：带有预热的余弦学习率调度器。
-*   **`gradient_clip`**：用于梯度裁剪的函数。
+* **`AdamW`**：AdamW 优化器的自定义实现。
+* **`SGDDecay`**：带有学习率衰减的 SGD 的自定义实现。
+* **`cos_lr_scheduler`**：带有预热的余弦学习率调度器。
+* **`gradient_clip`**：用于梯度裁剪的函数。
 
 ### 内核优化 (`kernel/`)
 
-*   **`flash_attention_triton.py`**：Flash Attention 2 的 Triton 实现，以提高性能和内存效率。
-*   **`flash_attention_mock.py`**：Flash Attention 的模拟实现，用于比较和测试。
-*   **`bench_mark/`**：一套基准测试，用于比较不同注意力实现和模型组件的性能。
+* **`flash_attention_triton.py`**：Flash Attention 2 的 Triton 实现，以提高性能和内存效率。
+* **`flash_attention_mock.py`**：Flash Attention 的模拟实现，用于比较和测试。
+* **`bench_mark/`**：一套基准测试，用于比较不同注意力实现和模型组件的性能。
+
+### 并行训练 (`parallel/`)
+
+* **`ddp.py`**：分布式数据并行 (DDP) 的自定义实现，支持跨多个 GPU 的梯度同步，并使用基于桶的通信提高效率。
+* **`sharded_optimizer.py`**：参数分片优化器，将模型参数分布在多个设备上，减少内存使用并实现更大模型的训练。
 
 ## 架构
 
 本代码库中的 Transformer 模型是一个仅解码器模型，类似于 GPT 等模型的架构。它专为语言建模任务而设计。关键的架构特性是：
 
-*   **预归一化：** 模型使用 RMSNorm 进行层归一化，它在注意力和前馈层*之前*应用。与后归一化相比，这能带来更稳定的训练。
-*   **SwiGLU 激活函数：** 前馈网络使用 SwiGLU (Swish-Gated Linear Unit) 激活函数，该函数已被证明可以提高语言模型的性能。
-*   **旋转位置嵌入 (RoPE):** 该模型不使用传统的位置嵌入，而是使用 RoPE 通过旋转注意力机制中的查询和键向量来合并位置信息。这是一种更有效处理长序列的方法。
+* **预归一化：** 模型使用 RMSNorm 进行层归一化，它在注意力和前馈层*之前*应用。与后归一化相比，这能带来更稳定的训练。
+* **SwiGLU 激活函数：** 前馈网络使用 SwiGLU (Swish-Gated Linear Unit) 激活函数，该函数已被证明可以提高语言模型的性能。
+* **旋转位置嵌入 (RoPE):** 该模型不使用传统的位置嵌入，而是使用 RoPE 通过旋转注意力机制中的查询和键向量来合并位置信息。这是一种更有效处理长序列的方法。
 
 ## 使用方法
 
@@ -114,7 +119,8 @@ uv run -m llm.training
 要进行分布式训练，请使用以下命令：
 
 ```bash
-torchrun --standalone --nproc_per_node=2 -m llm.training
+
+uv run -m llm.training --world_size 6 --batch_size 768
 ```
 
 ### 4. 生成文本
@@ -149,10 +155,10 @@ uv run pytest
 
 测试覆盖范围：
 
-*   通过将其输出与参考实现进行比较，来验证 Transformer 模型中每个模块的正确性。
-*   BPE 分词器的编码和解码，以及其训练过程。
-*   优化器和其他实用工具。
-*   分布式训练设置。
+* 通过将其输出与参考实现进行比较，来验证 Transformer 模型中每个模块的正确性。
+* BPE 分词器的编码和解码，以及其训练过程。
+* 优化器和其他实用工具。
+* 分布式训练设置。
 
 ## 训练
 
@@ -192,6 +198,3 @@ Tim and Sam looked at each other and started to laugh. They knew they were going
 ## 贡献
 
 欢迎贡献！如果您有任何建议或发现任何错误，请随时提交拉取请求或开启一个 issue。
-
----
-此 README 由 gemini-cli 生成。

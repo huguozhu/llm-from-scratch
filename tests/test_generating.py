@@ -42,12 +42,12 @@ def test_generate_produces_output(mock_bpe_tokenizer, mock_load_checkpoint, mock
     
     # vocab size is 50
     # let's make it output token 40, then 41, then 0 (endoftext)
-    logits1 = torch.full((1, 50), -float('inf'))
-    logits1[0, 40] = 1.0
-    logits2 = torch.full((1, 50), -float('inf'))
-    logits2[0, 41] = 1.0
-    logits3 = torch.full((1, 50), -float('inf'))
-    logits3[0, 0] = 1.0
+    logits1 = torch.full((1, 1, 50), -float('inf'))
+    logits1[0, 0, 40] = 1.0
+    logits2 = torch.full((1, 1, 50), -float('inf'))
+    logits2[0, 0, 41] = 1.0
+    logits3 = torch.full((1, 1, 50), -float('inf'))
+    logits3[0, 0, 0] = 1.0
     
     # The model is called inside a loop. We need to mock its return value for each call.
     mock_model_instance.side_effect = [logits1, logits2, logits3]

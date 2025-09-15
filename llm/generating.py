@@ -76,8 +76,10 @@ def generate(prompt: str) -> tuple[str, list[int]]:
                 break
 
     # Decode the generated tokens
-    prompt_len = len(tokenizer.encode(prompt))
+    prompt_len = len(token_ids)
     generated_ids = input_ids[0, prompt_len:].tolist()
+    if generated_ids and generated_ids[-1] == tokenizer.vcab2id[tokenizer.special_tokens[0]]:
+        generated_ids.pop()
     return tokenizer.decode(generated_ids), generated_ids
 
 
