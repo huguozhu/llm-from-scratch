@@ -165,13 +165,9 @@ def run_multihead_self_attention_with_rope(
     from llm.transformer import MultiHeadAttentionWithRoPE
     import torch
 
-    mha = MultiHeadAttentionWithRoPE(
-        d_model=d_model, num_head=num_heads, max_seq_len=max_seq_len, theta=theta
-    )
+    mha = MultiHeadAttentionWithRoPE(d_model=d_model, num_head=num_heads, max_seq_len=max_seq_len, theta=theta)
 
-    combined_qkv_weight = torch.cat(
-        [q_proj_weight, k_proj_weight, v_proj_weight], dim=0
-    )
+    combined_qkv_weight = torch.cat([q_proj_weight, k_proj_weight, v_proj_weight], dim=0)
     mha.project.w.data = combined_qkv_weight
     mha.out_linear.w.data = o_proj_weight
 
@@ -283,9 +279,7 @@ def run_transformer_block(
     ffn2_weight = weights["ffn.w2.weight"]
     ffn3_weight = weights["ffn.w3.weight"]
 
-    combined_qkv_weight = torch.cat(
-        [q_proj_weight, k_proj_weight, v_proj_weight], dim=0
-    )
+    combined_qkv_weight = torch.cat([q_proj_weight, k_proj_weight, v_proj_weight], dim=0)
     ts.mult_head_atten.project.w.data = combined_qkv_weight
     ts.mult_head_atten.out_linear.w.data = o_proj_weight
 
@@ -411,9 +405,7 @@ def run_transformer_lm(
         ffn2_weight = weights[f"layers.{layer}.ffn.w2.weight"]
         ffn3_weight = weights[f"layers.{layer}.ffn.w3.weight"]
 
-        combined_qkv_weight = torch.cat(
-            [q_proj_weight, k_proj_weight, v_proj_weight], dim=0
-        )
+        combined_qkv_weight = torch.cat([q_proj_weight, k_proj_weight, v_proj_weight], dim=0)
 
         ts.blocks[layer].mult_head_atten.project.w.data = combined_qkv_weight
         ts.blocks[layer].mult_head_atten.out_linear.w.data = o_proj_weight
@@ -493,9 +485,7 @@ def run_get_batch(
     """
     from llm.training import get_batch
 
-    return get_batch(
-        dataset, batch_size=batch_size, context_length=context_length, device=device
-    )
+    return get_batch(dataset, batch_size=batch_size, context_length=context_length, device=device)
 
 
 def run_softmax(in_features: Float[Tensor, " ..."], dim: int) -> Float[Tensor, " ..."]:
@@ -525,9 +515,7 @@ def run_cross_entropy(
     return CrossEntropyLoss()(inputs, targets)
 
 
-def run_gradient_clipping(
-    parameters: Iterable[torch.nn.Parameter], max_l2_norm: float
-) -> None:
+def run_gradient_clipping(parameters: Iterable[torch.nn.Parameter], max_l2_norm: float) -> None:
     """Given a set of parameters, clip their combined gradients to have l2 norm at most max_l2_norm.
 
     Args:
@@ -685,9 +673,7 @@ def run_train_bpe(
                 Merges are ordered by order of creation.
     """
     tokenizer = BpeTokenizer()
-    return tokenizer.train(
-        input_path, vocab_size=vocab_size, special_tokens=special_tokens
-    )
+    return tokenizer.train(input_path, vocab_size=vocab_size, special_tokens=special_tokens)
 
 
 def get_flashattention_autograd_function_pytorch() -> Type:
@@ -744,9 +730,7 @@ def get_ddp_individual_parameters(module: torch.nn.Module) -> torch.nn.Module:
     return DDP(module)
 
 
-def ddp_individual_parameters_on_after_backward(
-    ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer
-):
+def ddp_individual_parameters_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
     """
     Code to run after the backward pass is completed, but before we take
     an optimizer step.
@@ -783,9 +767,7 @@ def get_ddp_bucketed(module: torch.nn.Module, bucket_size_mb: float) -> torch.nn
     return DDP(module, bucket_size_mb=bucket_size_mb)
 
 
-def ddp_bucketed_on_after_backward(
-    ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer
-):
+def ddp_bucketed_on_after_backward(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
     """
     Code to run after the backward pass is completed, but before we take
     an optimizer step.
@@ -800,9 +782,7 @@ def ddp_bucketed_on_after_backward(
     ddp_model.finish_gradient_sync()
 
 
-def ddp_bucketed_on_train_batch_start(
-    ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer
-):
+def ddp_bucketed_on_train_batch_start(ddp_model: torch.nn.Module, optimizer: torch.optim.Optimizer):
     """
     Code to run at the very start of the training step.
 
@@ -815,9 +795,7 @@ def ddp_bucketed_on_train_batch_start(
     pass
 
 
-def get_sharded_optimizer(
-    params, optimizer_cls: Type[torch.optim.Optimizer], **kwargs
-) -> torch.optim.Optimizer:
+def get_sharded_optimizer(params, optimizer_cls: Type[torch.optim.Optimizer], **kwargs) -> torch.optim.Optimizer:
     """
     Returns a torch.optim.Optimizer that handles optimizer state sharding
     of the given optimizer_cls on the provided parameters.
@@ -836,3 +814,92 @@ def get_sharded_optimizer(
     from parallel import ShardedOptimizer
 
     return ShardedOptimizer(params, optimizer_cls, **kwargs)
+
+
+def run_extract_text_from_html_bytes(html_bytes: bytes) -> str | None:
+    from data_processing import extract_text_from_html
+
+    return extract_text_from_html(html_bytes)
+
+
+def run_identify_language(text: str) -> tuple[Any, float]:
+    from data_processing import LanguageIdentifier
+
+    identifier = LanguageIdentifier()
+    label, probs = identifier.identify(text)
+    return label, probs
+
+
+def run_mask_emails(text: str) -> tuple[str, int]:
+    from data_processing import PIIMasker
+
+    masker = PIIMasker()
+    masked_text, num_emails = masker.mask_emails(text)
+    return masked_text, num_emails
+
+
+def run_mask_phone_numbers(text: str) -> tuple[str, int]:
+    from data_processing import PIIMasker
+
+    masker = PIIMasker()
+    masked_text, num_emails = masker.mask_phone_numbers(text)
+    return masked_text, num_emails
+
+
+def run_mask_ips(text: str) -> tuple[str, int]:
+    from data_processing import PIIMasker
+
+    masker = PIIMasker()
+    masked_text, num = masker.mask_ipv4(text)
+    return masked_text, num
+
+
+def run_classify_nsfw(text: str) -> tuple[Any, float]:
+    from data_processing import NSFWDetector
+
+    identifier = NSFWDetector()
+    label, probs = identifier.identify(text)
+    return label, probs
+
+
+def run_classify_toxic_speech(text: str) -> tuple[Any, float]:
+    from data_processing import ToxicDetector
+
+    identifier = ToxicDetector()
+    label, probs = identifier.identify(text)
+    return label, probs
+
+
+def run_classify_quality(text: str) -> tuple[Any, float]:
+    from data_processing import QualityClassifier
+
+    identifier = QualityClassifier()
+    label, probs = identifier.identify(text)
+    return label, probs
+
+
+def run_gopher_quality_filter(text: str) -> bool:
+    from data_processing import QualityFilter
+
+    filter = QualityFilter()
+    return filter.pass_all_filters(text)
+
+
+def run_exact_line_deduplication(input_files: list[os.PathLike], output_directory: os.PathLike):
+    from data_processing import exact_line_deduplicate
+
+    exact_line_deduplicate(input_files, output_directory)
+
+
+def run_minhash_deduplication(
+    input_files: list[os.PathLike],
+    num_hashes: int,
+    num_bands: int,
+    ngrams: int,
+    jaccard_threshold: float,
+    output_directory: os.PathLike,
+):
+    from data_processing import MinHashDeduplicator
+
+    deduplicator = MinHashDeduplicator(num_hashes, num_bands, ngrams, jaccard_threshold)
+    deduplicator.deduplicate(input_files, output_directory)

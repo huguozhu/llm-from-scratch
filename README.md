@@ -12,7 +12,7 @@ This repository contains a from-scratch implementation of a modern decoder-only 
   * **SwiGLU:** activation function in the feed-forward network for improved performance.
   * **Rotary Position Embeddings (RoPE):** for effective positional encoding.
 * **Flash Attention 2:** Includes a Triton implementation of Flash Attention 2, significantly improving performance and memory efficiency.
-* **Distributed Training:** Supports Distributed Data Parallel (DDP) for training on multiple GPUs.
+* **Distributed Training:** Supports Distributed Data Parallel (DDP) and sharded optimizer for training on multiple GPUs.
 * **Custom BPE Tokenizer:** A from-scratch implementation of the Byte Pair Encoding (BPE) tokenizer, which can be trained on any text corpus.
 * **Custom Optimizers:** Includes custom implementations of `AdamW` and `SGDDecay` optimizers.
 * **Comprehensive Training and Generation Scripts:** Provides scripts for training the model on a large corpus and for generating text with a trained model.
@@ -130,16 +130,6 @@ Once you have a trained model, you can use `llm/generating.py` to generate text.
 uv run -m llm.generating
 ```
 
-## Data Inspection
-
-This project includes a script to inspect the quality of your training and validation data. The `inspect_data.py` script checks for token distribution, frequency of special tokens, and batch diversity. This can be useful to ensure your data is suitable for training.
-
-To use the script, run:
-
-```bash
-uv run inspect_data.py
-```
-
 ## Benchmarking
 
 For details on model performance and component benchmarks, please see [BENCHMARK.md](BENCHMARK.md).
@@ -188,6 +178,16 @@ Prompt: tell you a story
 Completion: ."
 Tim and Sam looked at each other and started to laugh. They knew they were going to have a big party. They said sorry to each other and hugged. They played games and ate cake and shared their cookies. They were happy and loved.
 <|endoftext|>
+```
+
+## Processing & training on your own data
+
+Downloading example Common Crawl data by:
+
+```bash
+mkdir -p data && cd data
+wget https://data.commoncrawl.org/crawl-data/CC-MAIN-2025-18/segments/1744889135610.12/warc/CC-MAIN-20250417135010-20250417165010-00065.warc.gz
+wget https://data.commoncrawl.org/crawl-data/CC-MAIN-2025-18/segments/1744889135610.12/wet/CC-MAIN-20250417135010-20250417165010-00065.warc.wet.gz
 ```
 
 ## License

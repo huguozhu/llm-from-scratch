@@ -131,16 +131,6 @@ uv run -m llm.training --world_size 6 --batch_size 768
 uv run -m llm.generating
 ```
 
-## 数据检查
-
-该项目包含一个用于检查训练和验证数据质量的脚本。`inspect_data.py` 脚本会检查令牌分布、特殊令牌的频率以及批次多样性。这对于确保您的数据适合训练非常有用。
-
-要使用该脚本，请运行：
-
-```bash
-uv run inspect_data.py
-```
-
 ## 基准测试
 
 关于模型性能和组件的基准测试详情，请参阅 [BENCHMARK.md](BENCHMARK.md)。

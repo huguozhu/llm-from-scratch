@@ -14,3 +14,4 @@ __pycache__
 docs/implementation_principles.md
 docs/technical_deep_dive.md
 log/memory_snapshot.pickle
+pre_trained
