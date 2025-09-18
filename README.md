@@ -17,6 +17,7 @@ This repository contains a from-scratch implementation of a modern decoder-only 
 * **Custom Optimizers:** Includes custom implementations of `AdamW` and `SGDDecay` optimizers.
 * **Comprehensive Training and Generation Scripts:** Provides scripts for training the model on a large corpus and for generating text with a trained model.
 * **Thorough Testing:** A comprehensive test suite using `pytest` and snapshot testing ensures the correctness of the implementation.
+* **Data Processing Pipeline:** A comprehensive suite of tools for data cleaning, filtering, and pre-processing.
 
 ## Implemented Components
 
@@ -63,6 +64,18 @@ This project provides a complete ecosystem for building and training a language 
 
 * **`ddp.py`**: A custom implementation of Distributed Data Parallel (DDP) that supports gradient synchronization across multiple GPUs with bucket-based communication for efficiency.
 * **`sharded_optimizer.py`**: A parameter-sharded optimizer that distributes model parameters across multiple devices, reducing memory usage and enabling training of larger models.
+
+### Data Processing (`data_processing/`)
+
+This project includes a suite of tools for pre-processing large text corpora for training language models. These tools are designed to clean, filter, and prepare the data to improve the quality of the trained model. The key data processing steps are:
+
+*   **`html_process.py`**: Extracts plain text from HTML content. This is useful for processing web-scraped data like Common Crawl.
+*   **`language_identification.py`**: Identifies the language of a given text. This can be used to filter for specific languages.
+*   **`quality_filter.py`**: A set of heuristic filters to remove low-quality content, such as filters for word count, average word length, and the proportion of alphabetic characters.
+*   **`deduplicate.py`**: Provides functions for both exact line-by-line deduplication and near-duplicate detection using MinHash.
+*   **`mask_pii.py`**: Masks personally identifiable information (PII) such as email addresses, phone numbers, and IP addresses.
+*   **`harmful_detect.py`**: Detects harmful content, including NSFW and toxic language, using pre-trained FastText models.
+*   **`quality_classfier.py`**: A FastText-based classifier to distinguish between high-quality and low-quality content.
 
 ## Architecture
 
