@@ -11,6 +11,7 @@
   * **RMSNorm：** 用于高效稳定的层归一化。
   * **SwiGLU：** 前馈网络中的激活函数，以提高性能。
   * **旋转位置嵌入 (RoPE)：** 用于有效的位置编码。
+* 监督微调: 包含使用对模型Qwen2.5-Math-1.5B在数据集gsm8k上的完整 SFT 示例.
 * **Flash Attention 2：** 包含 Flash Attention 2 的 Triton 实现，显著提高了性能和内存效率。
 * **分布式训练:** 支持使用分布式数据并行 (DDP) 在多个 GPU 上进行训练。
 * **自定义 BPE 分词器：** 从零开始实现的字节对编码 (BPE) 分词器，可以在任何文本语料库上进行训练。
@@ -23,7 +24,7 @@
 
 该项目为构建和训练语言模型提供了一个完整的生态系统。关键组件包括：
 
-### 核心模型 (`llm/transformer.py`)
+### 核心模型 & 架构 (`llm/transformer.py`)
 
 * **`Transformer`**：组合所有组件的主模型类。
 * **`TransformerBlock`**：Transformer 的单个模块，包含多头注意力和前馈网络。
@@ -36,6 +37,12 @@
 * **`Linear`**：自定义线性层。
 * **`Softmax`**：自定义 softmax 实现。
 * **`CrossEntropyLoss`**：自定义交叉熵损失函数。
+
+本代码库中的 Transformer 模型是一个仅解码器模型，类似于 GPT 等模型的架构。它专为语言建模任务而设计。关键的架构特性是：
+
+* **预归一化：** 模型使用 RMSNorm 进行层归一化，它在注意力和前馈层*之前*应用。与后归一化相比，这能带来更稳定的训练。
+* **SwiGLU 激活函数：** 前馈网络使用 SwiGLU (Swish-Gated Linear Unit) 激活函数，该函数已被证明可以提高语言模型的性能。
+* **旋转位置嵌入 (RoPE):** 该模型不使用传统的位置嵌入，而是使用 RoPE 通过旋转注意力机制中的查询和键向量来合并位置信息。这是一种更有效处理长序列的方法。
 
 ### 分词器 (`llm/bpe_tokenizer.py`)
 
@@ -69,21 +76,13 @@
 
 该项目包含一套用于预处理大型文本语料库以训练语言模型的工具。这些工具旨在清理、过滤和准备数据，以提高训练模型的质量。关键的数据处理步骤包括：
 
-*   **`html_process.py`**: 从 HTML 内容中提取纯文本。这对于处理像 Common Crawl 这样的网络抓取数据非常有用。
-*   **`language_identification.py`**: 识别给定文本的语言。这可以用于筛选特定语言的文本。
-*   **`quality_filter.py`**: 一套启发式过滤器，用于删除低质量内容，例如词数、平均词长和字母字符比例的过滤器。
-*   **`deduplicate.py`**: 提供精确的逐行去重和使用 MinHash 进行近似去重的功能。
-*   **`mask_pii.py`**: 屏蔽个人身份信息 (PII)，如电子邮件地址、电话号码和 IP 地址。
-*   **`harmful_detect.py`**: 使用预训练的 FastText 模型检测有害内容，包括 NSFW 和有毒语言。
-*   **`quality_classfier.py`**: 一个基于 FastText 的分类器，用于区分高质量和低质量内容。
-
-## 架构
-
-本代码库中的 Transformer 模型是一个仅解码器模型，类似于 GPT 等模型的架构。它专为语言建模任务而设计。关键的架构特性是：
-
-* **预归一化：** 模型使用 RMSNorm 进行层归一化，它在注意力和前馈层*之前*应用。与后归一化相比，这能带来更稳定的训练。
-* **SwiGLU 激活函数：** 前馈网络使用 SwiGLU (Swish-Gated Linear Unit) 激活函数，该函数已被证明可以提高语言模型的性能。
-* **旋转位置嵌入 (RoPE):** 该模型不使用传统的位置嵌入，而是使用 RoPE 通过旋转注意力机制中的查询和键向量来合并位置信息。这是一种更有效处理长序列的方法。
+* **`html_process.py`**: 从 HTML 内容中提取纯文本。这对于处理像 Common Crawl 这样的网络抓取数据非常有用。
+* **`language_identification.py`**: 识别给定文本的语言。这可以用于筛选特定语言的文本。
+* **`quality_filter.py`**: 一套启发式过滤器，用于删除低质量内容，例如词数、平均词长和字母字符比例的过滤器。
+* **`deduplicate.py`**: 提供精确的逐行去重和使用 MinHash 进行近似去重的功能。
+* **`mask_pii.py`**: 屏蔽个人身份信息 (PII)，如电子邮件地址、电话号码和 IP 地址。
+* **`harmful_detect.py`**: 使用预训练的 FastText 模型检测有害内容，包括 NSFW 和有毒语言。
+* **`quality_classfier.py`**: 一个基于 FastText 的分类器，用于区分高质量和低质量内容。
 
 ## 使用方法
 
@@ -192,6 +191,47 @@ Prompt: tell you a story
 Completion: ."
 Tim and Sam looked at each other and started to laugh. They knew they were going to have a big party. They said sorry to each other and hugged. They played games and ate cake and shared their cookies. They were happy and loved.
 <|endoftext|>
+```
+
+## 监督微调示例
+
+使用监督式微调 (SFT) 在 gsm8k 数据集上对 Qwen2.5-Math-1.5B 模型进行了微调。结果如下：
+
+* **零样本准确率:** 从 1.56% 提升到 62.9%。
+* **输出格式遵循率:** 从 18.9% 提升到 100%。
+
+**1. 获取 gsm8k 数据集**
+
+```bash
+cd dataset
+# 下载训练集
+wget https://raw.githubusercontent.com/openai/grade-school-math/master/grade_school_math/data/train.jsonl
+# 下载测试集
+wget https://raw.githubusercontent.com/openai/grade-school-math/master/grade_school_math/data/test.jsonl
+```
+
+**2. 运行评估和微调**
+
+在 gsm8k 数据集上评估 Qwen/Qwen2.5-Math-1.5B 模型的零样本准确率和格式遵循度：
+
+```bash
+uv run -m alignment.evaluate
+```
+
+在 gsm8k 数据集上对 Qwen/Qwen2.5-Math-1.5B 模型进行 SFT 微调，并测试微调后的推理准确率和格式遵循度：
+
+```bash
+uv run -m alignment.sft
+```
+
+**3. 微调后的示例输出**
+
+Prompt:
+
+```
+A conversation between User and Assistant. The User asks a question, and the Assistant solves it. The Assistant first thinks about the reasoning process in the mind and then provides the User with the answer. The reasoning process is enclosed within <think> </think> and answer is enclosed within <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think> <answer> answer here </answer>.
+User: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?
+Assistant: <think>
 ```
 
 ## 许可证

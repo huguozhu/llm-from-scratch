@@ -11,19 +11,20 @@ This repository contains a from-scratch implementation of a modern decoder-only 
   * **RMSNorm:** for efficient and stable layer normalization.
   * **SwiGLU:** activation function in the feed-forward network for improved performance.
   * **Rotary Position Embeddings (RoPE):** for effective positional encoding.
+* Supervised Fine-tuning: Containing fully SFT example on model Qwen2.5-Math-1.5B and dataset gsm8k.
 * **Flash Attention 2:** Includes a Triton implementation of Flash Attention 2, significantly improving performance and memory efficiency.
 * **Distributed Training:** Supports Distributed Data Parallel (DDP) and sharded optimizer for training on multiple GPUs.
 * **Custom BPE Tokenizer:** A from-scratch implementation of the Byte Pair Encoding (BPE) tokenizer, which can be trained on any text corpus.
 * **Custom Optimizers:** Includes custom implementations of `AdamW` and `SGDDecay` optimizers.
 * **Comprehensive Training and Generation Scripts:** Provides scripts for training the model on a large corpus and for generating text with a trained model.
-* **Thorough Testing:** A comprehensive test suite using `pytest` and snapshot testing ensures the correctness of the implementation.
+* **Through Testing:** A comprehensive test suite using `pytest` and snapshot testing ensures the correctness of the implementation.
 * **Data Processing Pipeline:** A comprehensive suite of tools for data cleaning, filtering, and pre-processing.
 
 ## Implemented Components
 
 This project provides a complete ecosystem for building and training a language model. The key components are:
 
-### Core Model (`llm/transformer.py`)
+### Core Model & Architecture (`llm/transformer.py`)
 
 * **`Transformer`**: The main model class that combines all the components.
 * **`TransformerBlock`**: A single block of the Transformer, containing multi-head attention and a feed-forward network.
@@ -36,6 +37,12 @@ This project provides a complete ecosystem for building and training a language 
 * **`Linear`**: A custom linear layer.
 * **`Softmax`**: A custom softmax implementation.
 * **`CrossEntropyLoss`**: A custom cross-entropy loss function.
+
+The Transformer model in this repository is a decoder-only model, similar to the architecture of models like GPT. It is designed for language modeling tasks. The key architectural features are:
+
+* **Pre-Normalization:** The model uses RMSNorm for layer normalization, which is applied *before* the attention and feed-forward layers. This leads to more stable training compared to post-normalization.
+* **SwiGLU Activation:** The feed-forward network uses the SwiGLU (Swish-Gated Linear Unit) activation function, which has been shown to improve performance in language models.
+* **Rotary Position Embedding (RoPE):** Instead of traditional positional embeddings, this model uses RoPE to incorporate positional information by rotating the query and key vectors in the attention mechanism. This is a more effective way to handle long sequences.
 
 ### Tokenizer (`llm/bpe_tokenizer.py`)
 
@@ -69,21 +76,13 @@ This project provides a complete ecosystem for building and training a language 
 
 This project includes a suite of tools for pre-processing large text corpora for training language models. These tools are designed to clean, filter, and prepare the data to improve the quality of the trained model. The key data processing steps are:
 
-*   **`html_process.py`**: Extracts plain text from HTML content. This is useful for processing web-scraped data like Common Crawl.
-*   **`language_identification.py`**: Identifies the language of a given text. This can be used to filter for specific languages.
-*   **`quality_filter.py`**: A set of heuristic filters to remove low-quality content, such as filters for word count, average word length, and the proportion of alphabetic characters.
-*   **`deduplicate.py`**: Provides functions for both exact line-by-line deduplication and near-duplicate detection using MinHash.
-*   **`mask_pii.py`**: Masks personally identifiable information (PII) such as email addresses, phone numbers, and IP addresses.
-*   **`harmful_detect.py`**: Detects harmful content, including NSFW and toxic language, using pre-trained FastText models.
-*   **`quality_classfier.py`**: A FastText-based classifier to distinguish between high-quality and low-quality content.
-
-## Architecture
-
-The Transformer model in this repository is a decoder-only model, similar to the architecture of models like GPT. It is designed for language modeling tasks. The key architectural features are:
-
-* **Pre-Normalization:** The model uses RMSNorm for layer normalization, which is applied *before* the attention and feed-forward layers. This leads to more stable training compared to post-normalization.
-* **SwiGLU Activation:** The feed-forward network uses the SwiGLU (Swish-Gated Linear Unit) activation function, which has been shown to improve performance in language models.
-* **Rotary Position Embedding (RoPE):** Instead of traditional positional embeddings, this model uses RoPE to incorporate positional information by rotating the query and key vectors in the attention mechanism. This is a more effective way to handle long sequences.
+* **`html_process.py`**: Extracts plain text from HTML content. This is useful for processing web-scraped data like Common Crawl.
+* **`language_identification.py`**: Identifies the language of a given text. This can be used to filter for specific languages.
+* **`quality_filter.py`**: A set of heuristic filters to remove low-quality content, such as filters for word count, average word length, and the proportion of alphabetic characters.
+* **`deduplicate.py`**: Provides functions for both exact line-by-line deduplication and near-duplicate detection using MinHash.
+* **`mask_pii.py`**: Masks personally identifiable information (PII) such as email addresses, phone numbers, and IP addresses.
+* **`harmful_detect.py`**: Detects harmful content, including NSFW and toxic language, using pre-trained FastText models.
+* **`quality_classfier.py`**: A FastText-based classifier to distinguish between high-quality and low-quality content.
 
 ## Usage
 
@@ -191,6 +190,47 @@ Prompt: tell you a story
 Completion: ."
 Tim and Sam looked at each other and started to laugh. They knew they were going to have a big party. They said sorry to each other and hugged. They played games and ate cake and shared their cookies. They were happy and loved.
 <|endoftext|>
+```
+
+## Supervised Fine-tuning Example
+
+We fine-tuned the Qwen2.5-Math-1.5B model on the gsm8k dataset using Supervised Fine-Tuning (SFT). The results are as follows:
+
+* **Zero-shot accuracy:** Increased from 1.56% to 62.9%.
+* **Output format compliance:** Increased from 18.9% to 100%.
+
+**1. Getting the gsm8k dataset**
+
+```bash
+cd dataset
+# Download the training set
+wget https://raw.githubusercontent.com/openai/grade-school-math/master/grade_school_math/data/train.jsonl
+# Download the test set
+wget https://raw.githubusercontent.com/openai/grade-school-math/master/grade_school_math/data/test.jsonl
+```
+
+**2. Running Evaluation and Fine-tuning**
+
+To evaluate the zero-shot accuracy and format compliance of the Qwen/Qwen2.5-Math-1.5B model on the gsm8k dataset:
+
+```bash
+uv run -m alignment.evaluate
+```
+
+To perform SFT fine-tuning on the Qwen/Qwen2.5-Math-1.5B model on the gsm8k dataset and test the post-fine-tuning inference accuracy and format compliance:
+
+```bash
+uv run -m alignment.sft
+```
+
+**3. Example Output after Fine-tuning**
+
+Prompt:
+
+```
+A conversation between User and Assistant. The User asks a question, and the Assistant solves it. The Assistant first thinks about the reasoning process in the mind and then provides the User with the answer. The reasoning process is enclosed within <think> </think> and answer is enclosed within <answer> </answer> tags, respectively, i.e., <think> reasoning process here </think> <answer> answer here </answer>.
+User: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every morning and bakes muffins for her friends every day with four. She sells the remainder at the farmers' market daily for $2 per fresh duck egg. How much in dollars does she make every day at the farmers' market?
+Assistant: <think>
 ```
 
 ## Processing & training on your own data
