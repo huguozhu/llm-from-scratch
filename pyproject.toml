@@ -28,14 +28,14 @@ dependencies = [
   "fasttext-wheel>=0.9.2",
   "nltk>=3.9.1",
   "unidecode>=1.4.0",
-
-  # For alignment, evaluation, and vLLM
   "vllm>=0.2.5",
   "latex2sympy2-extended>=1.10.2",
   "math-verify>=0.8.0",
   "pylatexenc>=2.10",
   "transformers>=4.56.2",
   "accelerate>=1.10.1",
+  "torchtyping>=0.1.5",
+  "typeguard>=2.13.3",
 ]
 
 [build-system]

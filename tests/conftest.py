@@ -31,8 +31,6 @@ def _canonicalize_array(arr: _A) -> np.ndarray:
 class NumpySnapshot:
     """Snapshot testing utility for NumPy arrays using .npz format."""
 
-    # Refactored to simplify and remove default arguments.
-    # The logic is now handled by the `numpy_snapshot` fixture.
     def __init__(
         self,
         snapshot_dir: str = "tests/_snapshots",
@@ -95,8 +93,6 @@ class NumpySnapshot:
 
 
 class Snapshot:
-    # Refactored to simplify and remove default arguments.
-    # The logic is now handled by the `snapshot` fixture.
     def __init__(self, snapshot_dir: str = "tests/_snapshots"):
         """
         Snapshot for arbitrary data types, saved as pickle files.
@@ -209,12 +205,6 @@ def numpy_snapshot(request):
     snapshot.assert_match = patched_assert_match
 
     return snapshot
-
-
-# ==============================================================================
-# New fixtures for alignment and evaluation tests.
-# These fixtures provide data and models for testing RLHF, DPO, and GRPO.
-# ==============================================================================
 
 
 @pytest.fixture

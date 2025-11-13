@@ -1,8 +1,20 @@
 import torch
-from transformers import PreTrainedTokenizer, PreTrainedModel
+from transformers import (
+    PreTrainedTokenizer,
+    PreTrainedModel,
+    AutoConfig,
+    # init_empty_weights,
+    AutoModelForCausalLM,
+)
+from accelerate import init_empty_weights, infer_auto_device_map
 import torch.nn.utils.rnn as rnn_utils
+import os
+
+# import patch
+from unittest.mock import patch
 
 import torch.nn.functional as F
+from vllm import LLM
 
 
 def tokenize_prompt_and_output(
@@ -122,3 +134,138 @@ def masked_normalize(
     masked_tensor = tensor * mask.to(dtype=tensor.dtype)
 
     return torch.sum(masked_tensor, dim=dim) / normalize_constant
+
+
+def get_device_ids(device: str) -> list:
+    """
+    Parses a device string and returns a list of device IDs.
+
+    Args:
+        device (str): The device string (e.g., "cpu", "cuda:0", "cuda:0,cuda:1").
+
+    Returns:
+        list: A list of integer device IDs.
+    """
+    if device == "cpu":
+        return []
+    elif device.startswith("cuda"):
+        # Handles formats like "cuda:0" and "cuda:0,cuda:1,cuda:2"
+        device_parts = device.split(",")
+        return [int(part.split(":")[1]) for part in device_parts]
+    else:
+        raise ValueError(f"Unknown device: {device}")
+
+
+def get_device_map(
+    hf_model_id: str | os.PathLike,
+    device: str,
+    max_gpu_use: str = "32GiB",
+    dtype="bfloat16",
+):
+    """
+    Infers a device map for a given model using Accelerate.
+
+    Args:
+        hf_model_id (str | os.PathLike): The Hugging Face model ID or path.
+        device (str): The target device string.
+        max_gpu_use (str, optional): The maximum GPU memory to use. Defaults to "32GiB".
+        dtype (str, optional): The data type to use. Defaults to "bfloat16".
+
+    Returns:
+        dict: The inferred device map.
+    """
+    config = AutoConfig.from_pretrained(hf_model_id, trust_remote_code=True)
+    with init_empty_weights():
+        empty_model = AutoModelForCausalLM.from_config(config, trust_remote_code=True)
+
+    # Tie the weights before calculating the device map.
+    empty_model.tie_weights()
+
+    sft_device_ids = get_device_ids(device)
+    # You can adjust the memory usage per GPU here if needed
+    max_memory = {dev_id: max_gpu_use for dev_id in sft_device_ids}
+
+    device_map = infer_auto_device_map(
+        empty_model,
+        max_memory=max_memory,
+        dtype=dtype,
+        no_split_module_classes=empty_model._no_split_modules,
+    )
+
+    del empty_model
+    return device_map
+
+
+def init_vllm(
+    model_path: str,
+    device: str,
+    dtype: str,
+    seed: int,
+    gpu_memory_utilization: float = 0.85,
+    enforce_eager: bool = False,
+    enable_prefix_caching: bool = False,
+    tokenizer_path: str | None = None,
+) -> LLM:
+    """
+    Initializes and returns a vLLM instance for inference.
+
+    Args:
+        model_path (str): The path to the model.
+        device (str): The device to run the model on.
+        dtype (str): The data type to use.
+        seed (int): The random seed.
+        gpu_memory_utilization (float, optional): The GPU memory utilization. Defaults to 0.85.
+        enforce_eager (bool, optional): Whether to enforce eager execution. Defaults to False.
+        enable_prefix_caching (bool, optional): Whether to enable prefix caching. Defaults to False.
+        tokenizer_path (str | None, optional): The path to the tokenizer. Defaults to None.
+
+    Returns:
+        LLM: The initialized vLLM instance.
+    """
+
+    # Monkeypatch from TRL:
+    # https://github.com/huggingface/trl/blob/
+    # 22759c820867c8659d00082ba8cf004e963873c1/trl/trainer/grpo_trainer.py
+    # Patch vLLM to make sure we can
+    # (1) place the vLLM model on the desired device (world_size_patch) and
+    # (2) avoid a test that is not designed for our setting (profiling_patch).
+    world_size_patch = patch("torch.distributed.get_world_size", return_value=1)
+    profiling_patch = patch(
+        "vllm.worker.worker.Worker._assert_memory_footprint_increased_during_profiling",
+        return_value=None,
+    )
+
+    if tokenizer_path is None:
+        tokenizer_path = model_path
+
+    with world_size_patch, profiling_patch:
+        return LLM(
+            model=model_path,
+            tokenizer=tokenizer_path,
+            device=device,
+            dtype=dtype,
+            seed=seed,
+            enable_prefix_caching=enable_prefix_caching,
+            gpu_memory_utilization=gpu_memory_utilization,
+            enforce_eager=enforce_eager,
+        )
+
+
+def str_to_torch_dtype(dtype_str: str) -> torch.dtype:
+    """
+    Converts a string representation of a dtype to a torch.dtype.
+
+    Args:
+        dtype_str (str): The string representation of the dtype (e.g., "bfloat16").
+
+    Returns:
+        torch.dtype: The corresponding torch.dtype.
+    """
+    mapping = {
+        "bfloat16": torch.bfloat16,
+        "float16": torch.float16,
+        "float32": torch.float32,
+    }
+    if dtype_str not in mapping:
+        raise ValueError(f"Unsupported dtype: {dtype_str}")
+    return mapping[dtype_str]
