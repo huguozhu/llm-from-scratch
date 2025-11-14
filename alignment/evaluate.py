@@ -108,6 +108,11 @@ def evaluate_math(
     print(f"avg_format_rewards: {sum(format_rewards) / len(format_rewards)}")
     print(f"avg_answer_rewards: {sum(answer_rewards) / len(answer_rewards)}")
     print(f"avg_all_rewards: {sum(all_rewards) / len(all_rewards)}")
+    return {
+        "avg_format_rewards": sum(format_rewards) / len(format_rewards),
+        "avg_answer_rewards": sum(answer_rewards) / len(answer_rewards),
+        "avg_all_rewards": sum(all_rewards) / len(all_rewards),
+    }
 
 
 if __name__ == "__main__":

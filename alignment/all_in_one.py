@@ -1,27 +1,63 @@
+import argparse
+import os
 from tqdm import tqdm
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
 from vllm import SamplingParams, LLM
-from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
-import os
-import math
-
-from alignment.args import get_rl_parser, get_sft_parser
-from alignment.dataset import Gsm8kDataset
-from alignment.grpo import (
-    compute_group_normalized_rewards,
-    grpo_microbatch_train_step,
+from transformers import (
+    AutoModelForCausalLM,
+    AutoTokenizer,
+    AutoConfig,
 )
+
+# We no longer need accelerate's inference utils
+# from accelerate import init_empty_weights, infer_auto_device_map
+import math  # Import for ceiling division
+
+from alignment.args import get_rl_parser
+from alignment.dataset import Gsm8kDataset
+from alignment.grpo import compute_group_normalized_rewards, grpo_microbatch_train_step
 from alignment.sft import init_vllm
 from alignment.drgrpo_grader import r1_zero_reward_fn
 from alignment.evaluate import evaluate_math
-from alignment.util import str_to_torch_dtype
 
 
-def partition_model_across_devices(args) -> dict[str, int]:
+def str_to_torch_dtype(dtype_str: str) -> torch.dtype:
+    mapping = {
+        "bfloat16": torch.bfloat16,
+        "float16": torch.float16,
+        "float32": torch.float32,
+    }
+    if dtype_str not in mapping:
+        raise ValueError(f"Unsupported dtype: {dtype_str}")
+    return mapping[dtype_str]
+
+
+def train(args):
+    dtype = str_to_torch_dtype(args.dtype)
+    group_size = 1 if args.loss_type == "no_baseline" else args.group_size
+
+    # === Step 1: Initialize vLLM for sampling (rollout) ===
+    print(f"Initializing vLLM sample_model on {args.sample_device}...")
+    sample_model = init_vllm(
+        model_path=args.model,
+        dtype=args.dtype,
+        seed=args.seed,
+        device=args.sample_device,
+        gpu_memory_utilization=args.gpu_memory_utilization,
+        enforce_eager=True,
+        enable_prefix_caching=False,
+    )
+
+    # === Step 2: Load trainable policy model with a MANUALLY BALANCED device map ===
+    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
+    if tokenizer.pad_token is None:
+        tokenizer.pad_token = tokenizer.eos_token
+
+    # --- Robust Dynamic GPU Allocation ---
     total_gpu_count = torch.cuda.device_count()
-    if total_gpu_count < 4:
+    if total_gpu_count < 3:
         raise ValueError(
             "This script requires at least 3 GPUs: 1 for sampling, 1 for reference, and at least 1 for the policy model."
         )
@@ -29,13 +65,12 @@ def partition_model_across_devices(args) -> dict[str, int]:
     try:
         sample_device_idx = int(args.sample_device.split(":")[-1])
         ref_device_idx = int(args.reference_model_device.split(":")[-1])
-        eval_device_idx = int(args.eval_device.split(":")[-1])
     except (ValueError, IndexError):
         raise ValueError(
             "Invalid device format. Please use 'cuda:N' for device arguments."
         )
 
-    reserved_indices = {sample_device_idx, ref_device_idx, eval_device_idx}
+    reserved_indices = {sample_device_idx, ref_device_idx}
     all_gpu_indices = set(range(total_gpu_count))
     policy_gpu_indices = sorted(list(all_gpu_indices - reserved_indices))
 
@@ -50,10 +85,10 @@ def partition_model_across_devices(args) -> dict[str, int]:
     print(f"Total GPUs detected: {total_gpu_count}")
     print(f"Reserved for vLLM sampling: cuda:{sample_device_idx}")
     print(f"Reserved for reference model: cuda:{ref_device_idx}")
-    print(f"Reserved for eval model: cuda:{eval_device_idx}")
     print(f"MANUALLY balancing policy model across: {policy_devices_str}")
     print("-" * 60)
 
+    ### MODIFICATION: Build the device_map manually for perfect balance ###
     config = AutoConfig.from_pretrained(args.model, trust_remote_code=True)
 
     # 1. Designate a main GPU for embeddings and the final output.
@@ -87,35 +122,10 @@ def partition_model_across_devices(args) -> dict[str, int]:
 
     print("Manually constructed balanced device map:")
     print(device_map)
-    return device_map
-
-
-def train(args, base_model_checkpoint_path: os.PathLike):
-    dtype = str_to_torch_dtype(args.dtype)
-    group_size = 1 if args.loss_type == "no_baseline" else args.group_size
-
-    # === Step 1: Initialize vLLM for sampling (rollout) ===
-    print(f"Initializing vLLM sample_model on {args.sample_device}...")
-    sample_model = init_vllm(
-        model_path=base_model_checkpoint_path,
-        tokenizer_path=args.model,
-        dtype=args.dtype,
-        seed=args.seed,
-        device=args.sample_device,
-        gpu_memory_utilization=args.gpu_memory_utilization,
-        enforce_eager=True,
-        enable_prefix_caching=False,
-    )
-
-    # === Step 2: Load trainable policy model with a MANUALLY BALANCED device map ===
-    tokenizer = AutoTokenizer.from_pretrained(args.model, trust_remote_code=True)
-    if tokenizer.pad_token is None:
-        tokenizer.pad_token = tokenizer.eos_token
-
-    device_map = partition_model_across_devices(args)
+    ### END MODIFICATION ###
 
     model = AutoModelForCausalLM.from_pretrained(
-        base_model_checkpoint_path,
+        args.model,
         trust_remote_code=True,
         torch_dtype=dtype,
         device_map=device_map,
@@ -127,7 +137,7 @@ def train(args, base_model_checkpoint_path: os.PathLike):
     # === Step 3: Load reference model (frozen) on its dedicated GPU ===
     print(f"Loading reference_model on {args.reference_model_device}...")
     reference_model = AutoModelForCausalLM.from_pretrained(
-        base_model_checkpoint_path,
+        args.model,
         trust_remote_code=True,
         torch_dtype=dtype,
         device_map={"": args.reference_model_device},
@@ -174,9 +184,6 @@ def train(args, base_model_checkpoint_path: os.PathLike):
                 temperature=args.sampling_temperature,
                 min_tokens=args.sampling_min_tokens,
                 max_tokens=args.sampling_max_tokens,
-                stop=["</answer>"],
-                repetition_penalty=1.1,
-                include_stop_str_in_output=True,
             )
             vllm_outputs = sample_model.generate(grouped_prompts, sampling_params)
             rollout_responses = [output.outputs[0].text for output in vllm_outputs]
@@ -191,19 +198,6 @@ def train(args, base_model_checkpoint_path: os.PathLike):
                 advantage_eps=args.advantage_eps,
                 normalize_by_std=args.use_std_normalization,
             )
-
-            # === debug info ===
-            # print("Sample rollout response:")
-            # print(f"Response: {rollout_responses[0] if rollout_responses else 'None'}")
-            # print(
-            #     f"Response length: {len(rollout_responses[0]) if rollout_responses else 0}"
-            # )
-            # print(
-            #     f"Sample advantage: {advantages[0].item() if len(advantages) > 0 else 'None'}"
-            # )
-            # print(
-            #     f"Sample raw reward: {raw_rewards[0].item() if len(raw_rewards) > 0 else 'None'}"
-            # )
 
             # === Tokenize ===
             prompt_tokens = tokenizer(
@@ -224,8 +218,8 @@ def train(args, base_model_checkpoint_path: os.PathLike):
             )
 
             # Move to correct devices
-            input_ids = full_tokens.input_ids.to(policy_device)
-            attention_mask = full_tokens.attention_mask.to(policy_device)
+            input_ids = full_tokens["input_ids"].to(policy_device)
+            attention_mask = full_tokens["attention_mask"].to(policy_device)
             advantages = advantages.to(policy_device)
             raw_rewards = raw_rewards.to(policy_device)
             prompt_lengths = prompt_lengths.to(policy_device)
@@ -237,15 +231,16 @@ def train(args, base_model_checkpoint_path: os.PathLike):
 
             # === Get old logits from reference model ===
             with torch.inference_mode():
-                # ref_input_ids = full_tokens["input_ids"].to(args.reference_model_device)
-                ref_input_ids = full_tokens.input_ids.to(args.reference_model_device)
-                ref_attention_mask = full_tokens.attention_mask.to(
+                ref_input_ids = full_tokens["input_ids"].to(args.reference_model_device)
+                ref_attention_mask = full_tokens["attention_mask"].to(
                     args.reference_model_device
                 )
                 old_logits = reference_model(
                     input_ids=ref_input_ids, attention_mask=ref_attention_mask
                 ).logits
-            old_logits = old_logits.to(policy_device)
+            old_logits = old_logits.to(
+                policy_device
+            )  # align with policy for logprob computation
 
             # === Compute log probs ===
             policy_log_probs_all = torch.log_softmax(policy_logits, dim=-1)
@@ -254,30 +249,22 @@ def train(args, base_model_checkpoint_path: os.PathLike):
             policy_log_probs = torch.gather(
                 policy_log_probs_all, -1, input_ids.unsqueeze(-1)
             ).squeeze(-1)
-
-            old_log_probs = (
-                torch.gather(old_log_probs_all, -1, input_ids.unsqueeze(-1))
-                .squeeze(-1)
-                .detach()
-            )
+            old_log_probs = torch.gather(
+                old_log_probs_all, -1, input_ids.unsqueeze(-1)
+            ).squeeze(-1)
 
             # === Response mask ===
             response_mask = torch.zeros_like(input_ids, dtype=torch.bool)
             for i in range(len(response_mask)):
                 start = prompt_lengths[i].item()
-                end = attention_mask[i].sum().item()
-                response_mask[i, start:end] = True
+                response_mask[i, start:] = True
             response_mask &= input_ids != tokenizer.pad_token_id
-
-            if tokenizer.eos_token_id is not None:
-                response_mask &= input_ids != tokenizer.eos_token_id
-            if tokenizer.bos_token_id is not None:
-                response_mask &= input_ids != tokenizer.bos_token_id
 
             # print("Prompt lengths:", prompt_lengths[:5])
             # print("Response mask sum per sample:", response_mask.sum(dim=1)[:5])
             # assert response_mask.sum() > 0, "No response tokens found!"
 
+            # === Micro-batch training ===
             total_samples = len(full_texts)
             total_loss = 0.0
 
@@ -301,36 +288,14 @@ def train(args, base_model_checkpoint_path: os.PathLike):
                     old_log_probs=mb_old_log_probs,
                     cliprange=args.cliprange,
                 )
+                total_loss += mb_loss * (end - i)  # 按样本数加权
 
-                total_loss += mb_loss.item() * (end - i)
-
-            avg_batch_loss = total_loss / total_samples
+            avg_batch_loss = total_loss / total_samples  # 批次平均 loss
+            avg_batch_loss.backward()  # 仅1次反向传播，无计算图销毁问题
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
-            optimizer.zero_grad()
 
             epoch_pbar.set_postfix({"loss": f"{avg_batch_loss.item():.6f}"})
-            print({"loss": f"{avg_batch_loss.item():.6f}"})
-
-            if (global_step + 1) % args.evaluate_freq == 0:
-                model.save_pretrained(args.tmp_checkpoint_path)
-                tokenizer.save_pretrained(args.tmp_checkpoint_path)
-
-                eval_model = LLM(
-                    model=args.checkpoint_path, dtype=args.dtype, seed=args.seed
-                )
-                score = evaluate_math(
-                    eval_model,
-                    args.prompt_template_path,
-                    args.rl_test_data,
-                    log_sample=True,
-                )
-                print(f"{global_step} eval score: {score}")
-                reference_model = LLM(
-                    model=args.ref_model_checkpoint_path,
-                    dtype=args.dtype,
-                    seed=args.seed,
-                )
 
             # Update reference model periodically
             if (global_step + 1) % args.update_old_policy_freq == 0:
@@ -343,16 +308,72 @@ def train(args, base_model_checkpoint_path: os.PathLike):
 
             global_step += 1
 
+        # Save final model (Hugging Face 格式会自动处理 device_map)
         model.save_pretrained(args.checkpoint_path)
         tokenizer.save_pretrained(args.checkpoint_path)
 
 
+# -----------------------------
+# Parser with bool fix (same as before)
+# -----------------------------
+
+
+def get_rl_parser():
+    parser = argparse.ArgumentParser(description="RL a Transformer model.")
+
+    parser.add_argument("--model", type=str, default="Qwen/Qwen2.5-Math-1.5B")
+    parser.add_argument("--dtype", type=str, default="bfloat16")
+    parser.add_argument("--max_seq_len", type=int, default=512)
+    parser.add_argument("--min_seq_len", type=int, default=3)
+    parser.add_argument("--sample_device", type=str, default="cuda:7")
+    parser.add_argument("--reference_model_device", type=str, default="cuda:6")
+    # 注意：不再需要 --rl_device
+    parser.add_argument("--max_rl_gpu_memory_use", type=str, default="31GiB")
+    parser.add_argument("--seed", type=int, default=42)
+    parser.add_argument(
+        "--prompt_template_path", type=str, default="alignment/prompts/r1_zero.prompt"
+    )
+    parser.add_argument("--update_old_policy_freq", type=int, default=10)
+
+    parser.add_argument("--epochs", type=int, default=10)
+    parser.add_argument("--lr", type=float, default=2e-6)
+    parser.add_argument("--beta1", type=float, default=0.9)
+    parser.add_argument("--beta2", type=float, default=0.999)
+    parser.add_argument("--weight_decay", type=float, default=0.01)
+    parser.add_argument("--advantage_eps", type=float, default=1e-6)
+    parser.add_argument("--rollout_batch_size", type=int, default=256)
+    parser.add_argument("--sampling_temperature", type=float, default=1.0)
+    parser.add_argument("--sampling_min_tokens", type=int, default=4)
+    parser.add_argument("--sampling_max_tokens", type=int, default=512)
+    parser.add_argument(
+        "--loss_type",
+        type=str,
+        default="grpo_clip",
+        choices=["no_baseline", "reinforce_with_baseline", "grpo_clip"],
+    )
+    parser.add_argument("--cliprange", type=float, default=0.2)
+    parser.add_argument("--rl_train_data", type=str, default="data/gsm8k/train.jsonl")
+    parser.add_argument("--train_batch_size", type=int, default=2)
+    parser.add_argument("--group_size", type=int, default=4)
+    parser.add_argument("--train_mini_batch_size", type=int, default=1)
+    parser.add_argument("--gpu_memory_utilization", type=float, default=0.9)
+
+    parser.add_argument(
+        "--use_std_normalization", type=lambda x: x.lower() == "true", default=True
+    )
+    parser.add_argument("--checkpoint_path", type=str, default="checkpoints/math_rl")
+    parser.add_argument("--rl_test_data", type=str, default="data/gsm8k/test.jsonl")
+
+    return parser
+
+
+# -----------------------------
+# Main
+# -----------------------------
+
 if __name__ == "__main__":
     parser = get_rl_parser()
     args = parser.parse_args()
-
-    sft_parser = get_sft_parser()
-    sft_args = sft_parser.parse_args()
 
     os.makedirs(args.checkpoint_path, exist_ok=True)
 
@@ -362,12 +383,10 @@ if __name__ == "__main__":
     )
     if not checkpoint_exists:
         print("No checkpoint found, starting training...")
-        train(args, sft_args.checkpoint_path)
+        train(args)
     else:
         print("Checkpoint found, skipping training...")
 
     print("Starting evaluation...")
     eval_model = LLM(model=args.checkpoint_path, dtype=args.dtype, seed=args.seed)
-    evaluate_math(
-        eval_model, args.prompt_template_path, args.rl_test_data, log_sample=True
-    )
+    evaluate_math(eval_model, args.prompt_template_path, args.rl_test_data)

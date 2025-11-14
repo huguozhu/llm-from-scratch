@@ -137,15 +137,6 @@ def masked_normalize(
 
 
 def get_device_ids(device: str) -> list:
-    """
-    Parses a device string and returns a list of device IDs.
-
-    Args:
-        device (str): The device string (e.g., "cpu", "cuda:0", "cuda:0,cuda:1").
-
-    Returns:
-        list: A list of integer device IDs.
-    """
     if device == "cpu":
         return []
     elif device.startswith("cuda"):
@@ -162,18 +153,6 @@ def get_device_map(
     max_gpu_use: str = "32GiB",
     dtype="bfloat16",
 ):
-    """
-    Infers a device map for a given model using Accelerate.
-
-    Args:
-        hf_model_id (str | os.PathLike): The Hugging Face model ID or path.
-        device (str): The target device string.
-        max_gpu_use (str, optional): The maximum GPU memory to use. Defaults to "32GiB".
-        dtype (str, optional): The data type to use. Defaults to "bfloat16".
-
-    Returns:
-        dict: The inferred device map.
-    """
     config = AutoConfig.from_pretrained(hf_model_id, trust_remote_code=True)
     with init_empty_weights():
         empty_model = AutoModelForCausalLM.from_config(config, trust_remote_code=True)
@@ -207,20 +186,8 @@ def init_vllm(
     tokenizer_path: str | None = None,
 ) -> LLM:
     """
-    Initializes and returns a vLLM instance for inference.
-
-    Args:
-        model_path (str): The path to the model.
-        device (str): The device to run the model on.
-        dtype (str): The data type to use.
-        seed (int): The random seed.
-        gpu_memory_utilization (float, optional): The GPU memory utilization. Defaults to 0.85.
-        enforce_eager (bool, optional): Whether to enforce eager execution. Defaults to False.
-        enable_prefix_caching (bool, optional): Whether to enable prefix caching. Defaults to False.
-        tokenizer_path (str | None, optional): The path to the tokenizer. Defaults to None.
-
-    Returns:
-        LLM: The initialized vLLM instance.
+    Start the inference process, here we use vLLM to hold a model on
+    a GPU separate from the policy.
     """
 
     # Monkeypatch from TRL:
@@ -252,15 +219,6 @@ def init_vllm(
 
 
 def str_to_torch_dtype(dtype_str: str) -> torch.dtype:
-    """
-    Converts a string representation of a dtype to a torch.dtype.
-
-    Args:
-        dtype_str (str): The string representation of the dtype (e.g., "bfloat16").
-
-    Returns:
-        torch.dtype: The corresponding torch.dtype.
-    """
     mapping = {
         "bfloat16": torch.bfloat16,
         "float16": torch.float16,

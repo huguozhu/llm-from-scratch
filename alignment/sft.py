@@ -40,10 +40,6 @@ def evaluate_model(
 
 
 def sft():
-    """
-    Performs Supervised Fine-Tuning (SFT) on a given model.
-    """
-    # --- 1. Parse arguments and initialize models ---
     parser = get_sft_parser()
     args = parser.parse_args()
     model_id = args.model
@@ -54,24 +50,32 @@ def sft():
         seed=args.seed,
     )
 
-    # --- 2. Load datasets ---
     train_dataset = Gsm8kDataset(
         data_path=args.sft_train_data, promt_template_path=args.prompt_template_path
     )
+    # test_dataset = Gsm8kDataset(
+    #     data_path=args.sft_test_data, promt_template_path=args.prompt_template_path
+    # )
+
     train_data_loader = DataLoader(
         train_dataset, batch_size=args.batch_size, shuffle=True
     )
+    # test_data_loader = DataLoader(
+    #     test_dataset, batch_size=args.batch_size, shuffle=False
+    # )
 
-    # --- 3. Initialize model, tokenizer, and optimizer ---
     device_map = get_device_map(
         args.model, args.sft_device, args.max_sft_gpu_memory_use, args.dtype
     )
+
     model = AutoModelForCausalLM.from_pretrained(
         model_id, device_map=device_map, trust_remote_code=True
     )
     tokenizer = AutoTokenizer.from_pretrained(model_id, trust_remote_code=True)
+
     if tokenizer.pad_token is None:
         tokenizer.pad_token = tokenizer.eos_token
+
     optimizer = torch.optim.AdamW(
         model.parameters(),
         lr=args.lr,
@@ -79,18 +83,15 @@ def sft():
         weight_decay=args.weight_decay,
     )
 
-    # --- 4. SFT Training Loop ---
     model.train()
     for epoch in range(args.epochs):
         for i, batch in enumerate(train_data_loader):
             prompts, completions, _ = batch
 
-            # Concatenate prompts and completions for input
             full_texts = [
                 p + c + tokenizer.eos_token for p, c in zip(prompts, completions)
             ]
 
-            # Tokenize and prepare inputs
             inputs = tokenizer(
                 full_texts,
                 return_tensors="pt",
@@ -99,18 +100,17 @@ def sft():
                 max_length=args.max_seq_len,
             ).to(model.device)
 
-            # Create labels and mask out prompt tokens
             prompt_tokens = tokenizer(list(prompts), add_special_tokens=False)
             prompt_lengths = [len(ids) for ids in prompt_tokens.input_ids]
+
             labels = inputs.input_ids.clone()
             for idx in range(len(prompts)):
                 prompt_len = prompt_lengths[idx]
-                labels[idx, :prompt_len] = -100  # Mask prompt tokens
+                labels[idx, :prompt_len] = -100
 
             # Mask padding tokens
             labels[labels == tokenizer.pad_token_id] = -100
 
-            # Forward pass
             outputs = model(
                 input_ids=inputs.input_ids,
                 attention_mask=inputs.attention_mask,
@@ -118,11 +118,12 @@ def sft():
             )
             loss = outputs.loss
 
-            # Normalize loss for gradient accumulation
+            # Normalize the loss for accumulation
             loss = loss / args.gradient_accumulation_steps
+
             loss.backward()
 
-            # Gradient accumulation
+            # Update weights only after accumulating gradients for N steps
             if (i + 1) % args.gradient_accumulation_steps == 0:
                 print(
                     f"Epoch {epoch}, Iteration {i}, Loss: {loss.item() * args.gradient_accumulation_steps}"
@@ -130,7 +131,6 @@ def sft():
                 optimizer.step()
                 optimizer.zero_grad()
 
-        # --- 5. Evaluation and Checkpointing ---
         # Evaluate the model on the test set
         load_policy_into_vllm_instance(model, eval_model)
         evaluate_math(
@@ -141,28 +141,21 @@ def sft():
             log_sample=True,
         )
 
-        # Save the model checkpoint
         model.save_pretrained(args.checkpoint_path)
+        tokenizer.save_pretrained(args.checkpoint_path)
 
 
 if __name__ == "__main__":
-    """
-    Main entry point for the SFT script.
-    - If a checkpoint exists, it evaluates the model directly.
-    - Otherwise, it runs the SFT process and then evaluates the resulting model.
-    """
     parser = get_sft_parser()
     args = parser.parse_args()
     if (
         os.path.exists(args.checkpoint_path)
         and len(os.listdir(args.checkpoint_path)) > 0
     ):
-        # Evaluate the model from the checkpoint if it exists
         model = LLM(args.checkpoint_path)
         evaluate_math(model, args.prompt_template_path, args.sft_test_data)
 
     else:
-        # Run SFT and then evaluate
         sft()
-        model = LLM(args.checkpoint_path)
+        model = LLM(args.checkpoint_path, tokenizer=args.model)
         evaluate_math(model, args.prompt_template_path, args.sft_test_data)
