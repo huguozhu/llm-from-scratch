@@ -11,7 +11,7 @@ def get_sft_parser():
     parser.add_argument(
         "--dtype",
         type=str,
-        default="bfloat16",
+        default="float32",
         help="dtype for training, bfloat16 by default, if bfloat16 is not supported in your device try float32 first, float16 is most-likely fail in old device",
     )
     parser.add_argument(
@@ -108,17 +108,18 @@ def get_rl_parser():
     parser.add_argument(
         "--prompt_template_path", type=str, default="alignment/prompts/r1_zero.prompt"
     )
-    parser.add_argument("--update_old_policy_freq", type=int, default=50)
-    parser.add_argument("--evaluate_freq", type=int, default=50)
+    # parser.add_argument("--update_old_policy_freq", type=int, default=10)
+    parser.add_argument("--evaluate_freq", type=int, default=10)
+    parser.add_argument("--log_dir", type=str, default="log/math_rl")
 
-    parser.add_argument("--epochs", type=int, default=2)
-    parser.add_argument("--lr", type=float, default=2e-6)
+    parser.add_argument("--lr", type=float, default=1e-6)
     parser.add_argument("--beta1", type=float, default=0.9)
-    parser.add_argument("--beta2", type=float, default=0.999)
+    parser.add_argument("--beta2", type=float, default=0.95)
     parser.add_argument("--weight_decay", type=float, default=0.01)
     parser.add_argument("--advantage_eps", type=float, default=1e-6)
     parser.add_argument("--rollout_batch_size", type=int, default=256)
     parser.add_argument("--sampling_temperature", type=float, default=1.0)
+    parser.add_argument("--sampling_top_p", type=float, default=0.9)
     parser.add_argument("--sampling_min_tokens", type=int, default=4)
     parser.add_argument("--sampling_max_tokens", type=int, default=512)
     parser.add_argument(
@@ -129,13 +130,14 @@ def get_rl_parser():
     )
     parser.add_argument("--cliprange", type=float, default=0.2)
     parser.add_argument("--rl_train_data", type=str, default="data/gsm8k/train.jsonl")
-    parser.add_argument("--train_batch_size", type=int, default=2)
-    parser.add_argument("--group_size", type=int, default=5)
-    parser.add_argument("--train_mini_batch_size", type=int, default=1)
+    parser.add_argument("--total_trainging_steps", type=int, default=1000)
+    parser.add_argument("--train_batch_size", type=int, default=16)
+    parser.add_argument("--group_size", type=int, default=4)
+    parser.add_argument("--train_mini_batch_size", type=int, default=8)
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.85)
 
     parser.add_argument(
-        "--use_std_normalization", type=lambda x: x.lower() == "true", default=True
+        "--use_std_normalization", type=lambda x: x.lower() == "true", default=False
     )
     parser.add_argument("--checkpoint_path", type=str, default="checkpoints/math_rl")
     parser.add_argument(

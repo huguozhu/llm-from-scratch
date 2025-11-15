@@ -73,6 +73,7 @@ def evaluate_math(
     test_data_path: os.PathLike,
     batch_size: int = 128,
     log_sample=False,
+    num_test_batches: int | None = None,
 ):
     # sampling_params = SamplingParams(
     #     temperature=1.0, top_p=1.0, max_tokens=1024, stop=["\n"]
@@ -88,7 +89,11 @@ def evaluate_math(
     format_rewards = []
     answer_rewards = []
     all_rewards = []
-    for i in range(len(test_data) // batch_size):
+    for i in range(
+        min(len(test_data) // batch_size, num_test_batches)
+        if num_test_batches is not None
+        else len(test_data) // batch_size
+    ):
         print(f"evaluate batch {i}/{len(test_data) // batch_size}")
         batch_promts = promts[i * batch_size : (i + 1) * batch_size]
         batch_ground_truth = ground_truths[i * batch_size : (i + 1) * batch_size]

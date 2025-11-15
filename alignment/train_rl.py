@@ -1,4 +1,3 @@
-from tqdm import tqdm
 import torch
 import torch.optim as optim
 from torch.utils.data import DataLoader
@@ -6,6 +5,7 @@ from vllm import SamplingParams, LLM
 from transformers import AutoModelForCausalLM, AutoTokenizer, AutoConfig
 import os
 import math
+import gc
 
 from alignment.args import get_rl_parser, get_sft_parser
 from alignment.dataset import Gsm8kDataset
@@ -17,6 +17,7 @@ from alignment.sft import init_vllm
 from alignment.drgrpo_grader import r1_zero_reward_fn
 from alignment.evaluate import evaluate_math
 from alignment.util import str_to_torch_dtype
+from torch.utils.tensorboard.writer import SummaryWriter
 
 
 def partition_model_across_devices(args) -> dict[str, int]:
@@ -91,6 +92,7 @@ def partition_model_across_devices(args) -> dict[str, int]:
 
 
 def train(args, base_model_checkpoint_path: os.PathLike):
+    writer = SummaryWriter(log_dir=args.log_dir)
     dtype = str_to_torch_dtype(args.dtype)
     group_size = 1 if args.loss_type == "no_baseline" else args.group_size
 
@@ -159,9 +161,8 @@ def train(args, base_model_checkpoint_path: os.PathLike):
     )
 
     global_step = 0
-    for epoch in range(args.epochs):
-        epoch_pbar = tqdm(train_data_loader, desc=f"Epoch {epoch + 1}/{args.epochs}")
-        for batch_id, batch in enumerate(epoch_pbar):
+    while global_step < args.total_trainging_steps:
+        for batch_id, batch in enumerate(train_data_loader):
             prompts, _, ground_truths = batch
 
             grouped_prompts = [p for p in prompts for _ in range(group_size)]
@@ -172,6 +173,7 @@ def train(args, base_model_checkpoint_path: os.PathLike):
             # === Rollout with vLLM ===
             sampling_params = SamplingParams(
                 temperature=args.sampling_temperature,
+                top_p=args.sampling_top_p,
                 min_tokens=args.sampling_min_tokens,
                 max_tokens=args.sampling_max_tokens,
                 stop=["</answer>"],
@@ -192,20 +194,7 @@ def train(args, base_model_checkpoint_path: os.PathLike):
                 normalize_by_std=args.use_std_normalization,
             )
 
-            # === debug info ===
-            # print("Sample rollout response:")
-            # print(f"Response: {rollout_responses[0] if rollout_responses else 'None'}")
-            # print(
-            #     f"Response length: {len(rollout_responses[0]) if rollout_responses else 0}"
-            # )
-            # print(
-            #     f"Sample advantage: {advantages[0].item() if len(advantages) > 0 else 'None'}"
-            # )
-            # print(
-            #     f"Sample raw reward: {raw_rewards[0].item() if len(raw_rewards) > 0 else 'None'}"
-            # )
-
-            # === Tokenize ===
+            # === Tokenize all data for the batch ===
             prompt_tokens = tokenizer(
                 grouped_prompts,
                 padding=True,
@@ -213,8 +202,6 @@ def train(args, base_model_checkpoint_path: os.PathLike):
                 max_length=args.max_seq_len,
                 return_tensors="pt",
             )
-            prompt_lengths = prompt_tokens.attention_mask.sum(dim=1)
-
             full_tokens = tokenizer(
                 full_texts,
                 padding=True,
@@ -223,125 +210,148 @@ def train(args, base_model_checkpoint_path: os.PathLike):
                 return_tensors="pt",
             )
 
-            # Move to correct devices
-            input_ids = full_tokens.input_ids.to(policy_device)
-            attention_mask = full_tokens.attention_mask.to(policy_device)
-            advantages = advantages.to(policy_device)
-            raw_rewards = raw_rewards.to(policy_device)
-            prompt_lengths = prompt_lengths.to(policy_device)
-
-            # === Get logits from policy model ===
-            policy_logits = model(
-                input_ids=input_ids, attention_mask=attention_mask
-            ).logits
-
-            # === Get old logits from reference model ===
-            with torch.inference_mode():
-                # ref_input_ids = full_tokens["input_ids"].to(args.reference_model_device)
-                ref_input_ids = full_tokens.input_ids.to(args.reference_model_device)
-                ref_attention_mask = full_tokens.attention_mask.to(
-                    args.reference_model_device
-                )
-                old_logits = reference_model(
-                    input_ids=ref_input_ids, attention_mask=ref_attention_mask
-                ).logits
-            old_logits = old_logits.to(policy_device)
-
-            # === Compute log probs ===
-            policy_log_probs_all = torch.log_softmax(policy_logits, dim=-1)
-            old_log_probs_all = torch.log_softmax(old_logits, dim=-1)
-
-            policy_log_probs = torch.gather(
-                policy_log_probs_all, -1, input_ids.unsqueeze(-1)
-            ).squeeze(-1)
-
-            old_log_probs = (
-                torch.gather(old_log_probs_all, -1, input_ids.unsqueeze(-1))
-                .squeeze(-1)
-                .detach()
-            )
-
-            # === Response mask ===
-            response_mask = torch.zeros_like(input_ids, dtype=torch.bool)
-            for i in range(len(response_mask)):
-                start = prompt_lengths[i].item()
-                end = attention_mask[i].sum().item()
-                response_mask[i, start:end] = True
-            response_mask &= input_ids != tokenizer.pad_token_id
-
-            if tokenizer.eos_token_id is not None:
-                response_mask &= input_ids != tokenizer.eos_token_id
-            if tokenizer.bos_token_id is not None:
-                response_mask &= input_ids != tokenizer.bos_token_id
-
-            # print("Prompt lengths:", prompt_lengths[:5])
-            # print("Response mask sum per sample:", response_mask.sum(dim=1)[:5])
-            # assert response_mask.sum() > 0, "No response tokens found!"
-
+            # === Prepare for Gradient Accumulation ===
             total_samples = len(full_texts)
             total_loss = 0.0
-
             optimizer.zero_grad()
 
+            # Calculate the number of gradient accumulation steps
+            grad_acc_steps = math.ceil(total_samples / args.train_mini_batch_size)
+
+            # The main training loop now iterates over microbatches.
+            # To correctly implement gradient accumulation, the forward pass and all
+            # subsequent calculations (log probs, loss, etc.) must be *inside* this
+            # loop. This ensures that a new computational graph is created for each
+            # microbatch. Calling .backward() on the loss from each microbatch then
+            # accumulates the gradients correctly without causing a "trying to backward
+            # through the graph a second time" error.
             for i in range(0, total_samples, args.train_mini_batch_size):
                 end = min(i + args.train_mini_batch_size, total_samples)
-                mb_policy_log_probs = policy_log_probs[i:end]
-                mb_old_log_probs = old_log_probs[i:end]
-                mb_advantages = advantages[i:end]
-                mb_raw_rewards = raw_rewards[i:end]
-                mb_response_mask = response_mask[i:end]
 
+                # --- Microbatch Slicing ---
+                mb_input_ids = full_tokens.input_ids[i:end].to(policy_device)
+                mb_attention_mask = full_tokens.attention_mask[i:end].to(policy_device)
+                mb_prompt_lengths = prompt_tokens.attention_mask.sum(dim=1)[i:end].to(
+                    policy_device
+                )
+                mb_advantages = advantages[i:end].to(policy_device)
+                mb_raw_rewards = raw_rewards[i:end].to(policy_device)
+
+                # --- Forward Pass for Microbatch ---
+                policy_logits = model(
+                    input_ids=mb_input_ids, attention_mask=mb_attention_mask
+                ).logits
+
+                with torch.inference_mode():
+                    ref_input_ids = mb_input_ids.to(args.reference_model_device)
+                    ref_attention_mask = mb_attention_mask.to(
+                        args.reference_model_device
+                    )
+                    old_logits = reference_model(
+                        input_ids=ref_input_ids, attention_mask=ref_attention_mask
+                    ).logits
+                old_logits = old_logits.to(policy_device)
+
+                # --- Log Probs for Microbatch ---
+                policy_log_probs_all = torch.log_softmax(policy_logits, dim=-1)
+                old_log_probs_all = torch.log_softmax(old_logits, dim=-1)
+
+                policy_log_probs = torch.gather(
+                    policy_log_probs_all, -1, mb_input_ids.unsqueeze(-1)
+                ).squeeze(-1)
+
+                old_log_probs = (
+                    torch.gather(old_log_probs_all, -1, mb_input_ids.unsqueeze(-1))
+                    .squeeze(-1)
+                    .detach()
+                )
+
+                # --- Response Mask for Microbatch ---
+                response_mask = torch.zeros_like(mb_input_ids, dtype=torch.bool)
+                for j in range(len(response_mask)):
+                    start = mb_prompt_lengths[j].item()
+                    # Use attention mask sum for the end to handle padding correctly
+                    end_pos = mb_attention_mask[j].sum().item()
+                    response_mask[j, start:end_pos] = True
+
+                response_mask &= mb_input_ids != tokenizer.pad_token_id
+                if tokenizer.eos_token_id is not None:
+                    response_mask &= mb_input_ids != tokenizer.eos_token_id
+                if tokenizer.bos_token_id is not None:
+                    response_mask &= mb_input_ids != tokenizer.bos_token_id
+
+                # --- GRPO Train Step (includes backward pass) ---
                 mb_loss, _ = grpo_microbatch_train_step(
-                    policy_log_probs=mb_policy_log_probs,
-                    response_mask=mb_response_mask,
-                    gradient_accumulation_steps=1,
+                    policy_log_probs=policy_log_probs,
+                    response_mask=response_mask,
+                    gradient_accumulation_steps=grad_acc_steps,
                     loss_type=args.loss_type,
                     raw_rewards=mb_raw_rewards,
                     advantages=mb_advantages,
-                    old_log_probs=mb_old_log_probs,
+                    old_log_probs=old_log_probs,
                     cliprange=args.cliprange,
                 )
 
                 total_loss += mb_loss.item() * (end - i)
 
+            # === Optimizer Step after Gradient Accumulation ===
             avg_batch_loss = total_loss / total_samples
             torch.nn.utils.clip_grad_norm_(model.parameters(), max_norm=1.0)
             optimizer.step()
             optimizer.zero_grad()
 
-            epoch_pbar.set_postfix({"loss": f"{avg_batch_loss.item():.6f}"})
-            print({"loss": f"{avg_batch_loss.item():.6f}"})
+            print(
+                {
+                    f"Step {global_step + 1}/{args.total_trainging_steps} loss": f"{avg_batch_loss:.6f}"
+                }
+            )
 
             if (global_step + 1) % args.evaluate_freq == 0:
                 model.save_pretrained(args.tmp_checkpoint_path)
                 tokenizer.save_pretrained(args.tmp_checkpoint_path)
 
                 eval_model = LLM(
-                    model=args.checkpoint_path, dtype=args.dtype, seed=args.seed
+                    model=args.tmp_checkpoint_path,
+                    dtype=args.dtype,
+                    seed=args.seed,
+                    device=args.eval_device,
                 )
                 score = evaluate_math(
                     eval_model,
                     args.prompt_template_path,
                     args.rl_test_data,
                     log_sample=True,
+                    # num_test_batches=5,
                 )
-                print(f"{global_step} eval score: {score}")
-                reference_model = LLM(
-                    model=args.ref_model_checkpoint_path,
-                    dtype=args.dtype,
-                    seed=args.seed,
+                print(
+                    f"{global_step + 1}/{args.total_trainging_steps} eval score: {score}"
                 )
+                # This re-initialization might be unnecessary/inefficient depending on workflow
+                # For now, keeping it as it was in the original code.
+                # reference_model = LLM(
+                #     model=args.ref_model_checkpoint_path,
+                #     dtype=args.dtype,
+                #     seed=args.seed,
+                # )
+                writer.add_scalar(
+                    "eval_score", score["avg_all_rewards"], global_step + 1
+                )
+                del eval_model
+                torch.cuda.empty_cache()
+                gc.collect()
 
             # Update reference model periodically
-            if (global_step + 1) % args.update_old_policy_freq == 0:
-                # 同步 state_dict（跨设备安全）
-                reference_model.load_state_dict(
-                    {k: v.cpu() for k, v in model.state_dict().items()}
-                )
-                reference_model.to(args.reference_model_device)
-                reference_model.eval()
+            # if (global_step + 1) % args.update_old_policy_freq == 0:
+            #     # Safely transfer state_dict across devices
+            #     reference_model.load_state_dict(
+            #         {k: v.cpu() for k, v in model.state_dict().items()}
+            #     )
+            #     reference_model.to(args.reference_model_device)
+            #     reference_model.eval()
 
             global_step += 1
+            if global_step >= args.total_trainging_steps:
+                break
 
         model.save_pretrained(args.checkpoint_path)
         tokenizer.save_pretrained(args.checkpoint_path)
