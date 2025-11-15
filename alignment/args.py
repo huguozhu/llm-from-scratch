@@ -5,26 +5,20 @@ def get_sft_parser():
     parser = argparse.ArgumentParser(description="SFT a Transformer model.")
 
     # Model Hyperparameters
-    parser.add_argument(
-        "--model", type=str, default="Qwen/Qwen2.5-Math-1.5B", help="hf model id"
-    )
+    parser.add_argument("--model", type=str, default="Qwen/Qwen2.5-Math-1.5B", help="hf model id")
     parser.add_argument(
         "--dtype",
         type=str,
         default="float32",
         help="dtype for training, bfloat16 by default, if bfloat16 is not supported in your device try float32 first, float16 is most-likely fail in old device",
     )
-    parser.add_argument(
-        "--max_seq_len", type=int, default=1024, help="Max sequence length"
-    )
+    parser.add_argument("--max_seq_len", type=int, default=1024, help="Max sequence length")
 
     # Optimizer Hyperparameters
     parser.add_argument("--lr", type=float, default=1e-5, help="Learning rate")
     parser.add_argument("--beta1", type=float, default=0.9, help="AdamW beta1")
     parser.add_argument("--beta2", type=float, default=0.999, help="AdamW beta2")
-    parser.add_argument(
-        "--weight_decay", type=float, default=0.01, help="AdamW weight decay"
-    )
+    parser.add_argument("--weight_decay", type=float, default=0.01, help="AdamW weight decay")
 
     # Training Hyperparameters
     parser.add_argument("--epochs", type=int, default=4, help="Number of epochs")
@@ -105,9 +99,7 @@ def get_rl_parser():
     parser.add_argument("--eval_device", type=str, default="cuda:5")
     parser.add_argument("--max_rl_gpu_memory_use", type=str, default="31GiB")
     parser.add_argument("--seed", type=int, default=42)
-    parser.add_argument(
-        "--prompt_template_path", type=str, default="alignment/prompts/r1_zero.prompt"
-    )
+    parser.add_argument("--prompt_template_path", type=str, default="alignment/prompts/r1_zero.prompt")
     # parser.add_argument("--update_old_policy_freq", type=int, default=10)
     parser.add_argument("--evaluate_freq", type=int, default=10)
     parser.add_argument("--log_dir", type=str, default="log/math_rl")
@@ -130,19 +122,15 @@ def get_rl_parser():
     )
     parser.add_argument("--cliprange", type=float, default=0.2)
     parser.add_argument("--rl_train_data", type=str, default="data/gsm8k/train.jsonl")
-    parser.add_argument("--total_trainging_steps", type=int, default=1000)
+    parser.add_argument("--total_trainging_steps", type=int, default=170)
     parser.add_argument("--train_batch_size", type=int, default=16)
     parser.add_argument("--group_size", type=int, default=4)
     parser.add_argument("--train_mini_batch_size", type=int, default=8)
     parser.add_argument("--gpu_memory_utilization", type=float, default=0.85)
 
-    parser.add_argument(
-        "--use_std_normalization", type=lambda x: x.lower() == "true", default=False
-    )
+    parser.add_argument("--use_std_normalization", type=lambda x: x.lower() == "true", default=False)
     parser.add_argument("--checkpoint_path", type=str, default="checkpoints/math_rl")
-    parser.add_argument(
-        "--tmp_checkpoint_path", type=str, default="checkpoints/math_rl_tmp"
-    )
+    parser.add_argument("--tmp_checkpoint_path", type=str, default="checkpoints/math_rl_tmp")
     parser.add_argument("--rl_test_data", type=str, default="data/gsm8k/test.jsonl")
 
     return parser

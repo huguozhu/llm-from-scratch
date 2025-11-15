@@ -234,6 +234,16 @@ User: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every mo
 Assistant: <think>
 ```
 
+## 强化学习微调示例
+
+在监督微调（SFT）之后，您可以使用强化学习（RL）来进一步使模型与特定目标对齐，例如提高数学推理的准确性。本项目实现了 GRPO（Group-wise Reward Policy Optimization），一种类似 PPO 的算法，以根据奖励信号对模型进行微调。
+
+要以 SFT 模型为起点，在 gsm8k 数据集上开始 RL 微调过程，请运行以下命令：
+
+```bash
+uv run -m alignment.train_rl
+```
+
 ## 许可证
 
 该项目根据 MIT 许可证授权。有关详细信息，请参阅 `LICENSE` 文件。

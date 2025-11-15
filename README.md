@@ -233,6 +233,16 @@ User: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every mo
 Assistant: <think>
 ```
 
+## Reinforcement Learning Fine-tuning Example
+
+After Supervised Fine-tuning (SFT), you can further align the model with a specific objective, such as improving mathematical reasoning accuracy, using Reinforcement Learning (RL). This project implements GRPO (Group-wise Reward Policy Optimization), a PPO-like algorithm, to fine-tune the model based on a reward signal.
+
+To start the RL fine-tuning process on the gsm8k dataset using the SFT model as a starting point, run the following command:
+
+```bash
+uv run -m alignment.train_rl
+```
+
 ## Processing & training on your own data
 
 Downloading example Common Crawl data by:
