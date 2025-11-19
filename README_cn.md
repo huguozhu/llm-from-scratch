@@ -1,3 +1,4 @@
+<!-- This is a translated version of README.md. Please keep it in sync with the English version. -->
 [English](./README.md)
 
 # 从零开始的 LLM
@@ -7,24 +8,50 @@
 ## 特性
 
 * **从零开始实现：** Transformer 模型的每个组件都使用 PyTorch 从零开始实现，从而深入理解其底层机制。
+* **BPE 分词器：** 从零开始实现的字节对编码 (BPE) 分词器，可以在任何文本语料库上进行训练。
 * **现代化架构：** 该模型融合了最先进语言模型中使用的现代技术，包括：
   * **RMSNorm：** 用于高效稳定的层归一化。
   * **SwiGLU：** 前馈网络中的激活函数，以提高性能。
   * **旋转位置嵌入 (RoPE)：** 用于有效的位置编码。
-* 监督微调: 包含使用对模型Qwen2.5-Math-1.5B在数据集gsm8k上的完整 SFT 示例.
-* **Flash Attention 2：** 包含 Flash Attention 2 的 Triton 实现，显著提高了性能和内存效率。
-* **分布式训练:** 支持使用分布式数据并行 (DDP) 在多个 GPU 上进行训练。
-* **自定义 BPE 分词器：** 从零开始实现的字节对编码 (BPE) 分词器，可以在任何文本语料库上进行训练。
-* **自定义优化器：** 包括 `AdamW` 和 `SGDDecay` 优化器的自定义实现。
-* **全面的训练和生成脚本：** 提供用于在大型语料库上训练模型以及使用训练好的模型生成文本的脚本。
-* **完备的测试：** 使用 `pytest` 和快照测试的全面测试套件确保了实现的正确性。
 * **数据处理流程:** 一套完整的数据清洗、过滤和预处理工具。
+* **Flash Attention 2：** 包含 Flash Attention 2 的 Triton 实现，显著提高了性能和内存效率。
+* **分布式训练:** 支持使用分布式数据并行 (DDP) 和分片优化器在多个 GPU 上进行训练。
+* **监督微调 (SFT)**: 包含使用对模型Qwen2.5-Math-1.5B在数据集gsm8k上的完整 SFT 示例.
+* **强化学习微调 (RLFT)**: 包含使用对模型Qwen2.5-Math-1.5B在数据集gsm8k上的完整 RLFT 示例.
+
+- [从零开始的 LLM](#从零开始的-llm)
+  - [特性](#特性)
+  - [已实现的组件](#已实现的组件)
+    - [核心模型与架构 (`llm/transformer.py`)](#核心模型与架构-llmtransformerpy)
+    - [分词器 (`llm/bpe_tokenizer.py`)](#分词器-llmbpe_tokenizerpy)
+    - [训练与推理](#训练与推理)
+    - [优化器和实用工具 (`llm/transformer.py`)](#优化器和实用工具-llmtransformerpy)
+    - [内核优化 (`kernel/`)](#内核优化-kernel)
+    - [并行训练 (`parallel/`)](#并行训练-parallel)
+    - [数据处理 (`data_processing/`)](#数据处理-data_processing)
+  - [使用方法](#使用方法)
+    - [1. 准备数据](#1-准备数据)
+    - [2. 训练分词器](#2-训练分词器)
+    - [3. 训练模型](#3-训练模型)
+    - [4. 生成文本](#4-生成文本)
+  - [基准测试](#基准测试)
+  - [测试](#测试)
+  - [训练](#训练)
+    - [损失曲线](#损失曲线)
+    - [学习率表](#学习率表)
+  - [LLM 输出示例](#llm-输出示例)
+  - [监督微调](#监督微调)
+  - [强化学习微调](#强化学习微调)
+  - [在您自己的数据上进行处理和训练](#在您自己的数据上进行处理和训练)
+  - [许可证](#许可证)
+  - [贡献](#贡献)
+
 
 ## 已实现的组件
 
 该项目为构建和训练语言模型提供了一个完整的生态系统。关键组件包括：
 
-### 核心模型 & 架构 (`llm/transformer.py`)
+### 核心模型与架构 (`llm/transformer.py`)
 
 * **`Transformer`**：组合所有组件的主模型类。
 * **`TransformerBlock`**：Transformer 的单个模块，包含多头注意力和前馈网络。
@@ -131,7 +158,6 @@ uv run -m llm.training
 要进行分布式训练，请使用以下命令：
 
 ```bash
-
 uv run -m llm.training --world_size 6 --batch_size 768
 ```
 
@@ -193,7 +219,7 @@ Tim and Sam looked at each other and started to laugh. They knew they were going
 <|endoftext|>
 ```
 
-## 监督微调示例
+## 监督微调
 
 使用监督式微调 (SFT) 在 gsm8k 数据集上对 Qwen2.5-Math-1.5B 模型进行了微调。结果如下：
 
@@ -234,7 +260,7 @@ User: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every mo
 Assistant: <think>
 ```
 
-## 强化学习微调示例
+## 强化学习微调
 
 在监督微调（SFT）之后，您可以使用强化学习（RL）来进一步使模型与特定目标对齐，例如提高数学推理的准确性。本项目实现了 GRPO（Group-wise Reward Policy Optimization），一种类似 PPO 的算法，以根据奖励信号对模型进行微调。
 
@@ -242,6 +268,16 @@ Assistant: <think>
 
 ```bash
 uv run -m alignment.train_rl
+```
+
+## 在您自己的数据上进行处理和训练
+
+通过以下方式下载示例 Common Crawl 数据：
+
+```bash
+mkdir -p data && cd data
+wget https://data.commoncrawl.org/crawl-data/CC-MAIN-2025-18/segments/1744889135610.12/warc/CC-MAIN-20250417135010-20250417165010-00065.warc.gz
+wget https://data.commoncrawl.org/crawl-data/CC-MAIN-2025-18/segments/1744889135610.12/wet/CC-MAIN-20250417135010-20250417165010-00065.warc.wet.gz
 ```
 
 ## 许可证

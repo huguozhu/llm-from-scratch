@@ -7,18 +7,44 @@ This repository contains a from-scratch implementation of a modern decoder-only 
 ## Features
 
 * **From-Scratch Implementation:** Every component of the Transformer model is implemented from scratch using PyTorch, providing a deep understanding of the underlying mechanisms.
+* **BPE Tokenizer:** A from-scratch implementation of the Byte Pair Encoding (BPE) tokenizer, which can be trained on any text corpus.
 * **Modern Architecture:** The model incorporates modern techniques used in state-of-the-art language models, including:
   * **RMSNorm:** for efficient and stable layer normalization.
   * **SwiGLU:** activation function in the feed-forward network for improved performance.
   * **Rotary Position Embeddings (RoPE):** for effective positional encoding.
-* Supervised Fine-tuning: Containing fully SFT example on model Qwen2.5-Math-1.5B and dataset gsm8k.
+* **Data Processing Pipeline:** A comprehensive suite of tools for data cleaning, filtering, and pre-processing.
 * **Flash Attention 2:** Includes a Triton implementation of Flash Attention 2, significantly improving performance and memory efficiency.
 * **Distributed Training:** Supports Distributed Data Parallel (DDP) and sharded optimizer for training on multiple GPUs.
-* **Custom BPE Tokenizer:** A from-scratch implementation of the Byte Pair Encoding (BPE) tokenizer, which can be trained on any text corpus.
-* **Custom Optimizers:** Includes custom implementations of `AdamW` and `SGDDecay` optimizers.
-* **Comprehensive Training and Generation Scripts:** Provides scripts for training the model on a large corpus and for generating text with a trained model.
-* **Through Testing:** A comprehensive test suite using `pytest` and snapshot testing ensures the correctness of the implementation.
-* **Data Processing Pipeline:** A comprehensive suite of tools for data cleaning, filtering, and pre-processing.
+* **Supervised Fine-tuning (SFT)**: Containing fully SFT example on model Qwen2.5-Math-1.5B and dataset gsm8k.
+* **Reinforcement Learning Fine-tuning (RLFT)**: Containing fully RLFT example on model Qwen2.5-Math-1.5B and dataset gsm8k.
+
+- [LLM from Scratch](#llm-from-scratch)
+  - [Features](#features)
+  - [Implemented Components](#implemented-components)
+    - [Core Model \& Architecture (`llm/transformer.py`)](#core-model--architecture-llmtransformerpy)
+    - [Tokenizer (`llm/bpe_tokenizer.py`)](#tokenizer-llmbpe_tokenizerpy)
+    - [Training and Inference](#training-and-inference)
+    - [Optimizers and Utilities (`llm/transformer.py`)](#optimizers-and-utilities-llmtransformerpy)
+    - [Kernel Optimizations (`kernel/`)](#kernel-optimizations-kernel)
+    - [Parallel Training (`parallel/`)](#parallel-training-parallel)
+    - [Data Processing (`data_processing/`)](#data-processing-data_processing)
+  - [Usage](#usage)
+    - [1. Preparing the Data](#1-preparing-the-data)
+    - [2. Training the Tokenizer](#2-training-the-tokenizer)
+    - [3. Training the Model](#3-training-the-model)
+    - [4. Generating Text](#4-generating-text)
+  - [Benchmarking](#benchmarking)
+  - [Testing](#testing)
+  - [Training](#training)
+    - [Loss Curve](#loss-curve)
+    - [Learning Rate Schedule](#learning-rate-schedule)
+  - [Example LLM Output](#example-llm-output)
+  - [Supervised Fine-tuning](#supervised-fine-tuning)
+  - [Reinforcement Learning Fine-tuning](#reinforcement-learning-fine-tuning)
+  - [Processing \& training on your own data](#processing--training-on-your-own-data)
+  - [License](#license)
+  - [Contributing](#contributing)
+
 
 ## Implemented Components
 
@@ -192,9 +218,9 @@ Tim and Sam looked at each other and started to laugh. They knew they were going
 <|endoftext|>
 ```
 
-## Supervised Fine-tuning Example
+## Supervised Fine-tuning
 
-We fine-tuned the Qwen2.5-Math-1.5B model on the gsm8k dataset using Supervised Fine-Tuning (SFT). The results are as follows:
+I fine-tuned the Qwen2.5-Math-1.5B model on the gsm8k dataset using Supervised Fine-Tuning (SFT). The results are as follows:
 
 * **Zero-shot accuracy:** Increased from 1.56% to 62.9%.
 * **Output format compliance:** Increased from 18.9% to 100%.
@@ -233,7 +259,7 @@ User: Janet’s ducks lay 16 eggs per day. She eats three for breakfast every mo
 Assistant: <think>
 ```
 
-## Reinforcement Learning Fine-tuning Example
+## Reinforcement Learning Fine-tuning
 
 After Supervised Fine-tuning (SFT), you can further align the model with a specific objective, such as improving mathematical reasoning accuracy, using Reinforcement Learning (RL). This project implements GRPO (Group-wise Reward Policy Optimization), a PPO-like algorithm, to fine-tune the model based on a reward signal.
 
