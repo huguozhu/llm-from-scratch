@@ -31,13 +31,29 @@
 #   - merges      : list[tuple[bytes, bytes]]  有序合并规则列表
 #   - merge_ranks : dict[tuple[bytes, bytes], int]  合并优先级（rank 越小优先级越高）
 #   - special_tokens: 特殊 token 列表，如 <|endoftext|>，在预分词时单独处理
+
+# 操作	        时间复杂度	空间复杂度	说明
+# train()	    O(V * N)	O(N)	    V=词表大小, N=语料大小
+# encode()	    O(L * M)	O(L)	    L=文本长度, M=平均合并次数
+# decode()	    O(T)	    O(T)	    T=token数量
+# _pre_token()	O(L)	    O(L)	    正则匹配开销较大
+
+
+#       与标准BPE的对比
+# 特性	        标准BPE	        本实现
+# 基础单元	    字符	字节         （UTF-8）
+# 预分词   	    空格分词	        GPT-2正则
+# 未登录词处理	<UNK>	        字节级fallback
+# 特殊token	    需特殊处理	    预分词阶段隔离
+# 编码算法	    贪心最长匹配	    rank优先合并
+
 # ==============================================================================
 from collections.abc import Iterator
 import regex as re
 import os
 import pickle
 
-from llm.args import get_parser
+from args import get_parser
 
 
 class BpeTokenizer:
@@ -53,6 +69,12 @@ class BpeTokenizer:
             errors         : UTF-8 编解码错误处理策略（默认 "replace"）
         """
         # GPT-2 风格的预分词正则：将文本切分为缩写、单词、数字、标点、空白
+        # 匹配：
+        # - 's, 'd, 't, 'll, 've, 're (英文缩写)
+        # - 单词（可选前导空格）
+        # - 数字（可选前导空格）
+        # - 标点符号（可选前导空格）
+        # - 连续空白
         self.pattern = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s"""
         self.errors = errors
         self.vcab2id = dict[bytes, int]()                    # token 字节串 -> ID
@@ -84,6 +106,7 @@ class BpeTokenizer:
         self.vcab2id = {v: k for k, v in self.id2vcab.items()}
         self.merge_ranks = {pair: i for i, pair in enumerate(self.merges)}
 
+    # 预分词
     def _pre_token(self, corpus: bytes) -> list[bytes]:
         if not self.special_tokens:
             return [
@@ -91,9 +114,11 @@ class BpeTokenizer:
                 for match in re.finditer(self.pattern, corpus.decode("utf-8", self.errors))
             ]
 
+        # 1. 处理特殊token：用正则split隔离
         pattern = b"|".join(map(re.escape, self.special_tokens))
         parts = re.split(b"(" + pattern + b")", corpus)
 
+        # 2. 对非特殊token部分应用GPT-2正则
         final_parts = []
         for part in parts:
             if not part:
@@ -101,6 +126,7 @@ class BpeTokenizer:
             if part in self.special_tokens:
                 final_parts.append(part)
             else:
+                # 使用GPT-2风格正则切分
                 final_parts.extend(
                     [
                         match.group(0).encode("utf-8", self.errors)
@@ -109,6 +135,9 @@ class BpeTokenizer:
                 )
         return final_parts
 
+    # 预分词后每个片段独立编码
+    # 贪心算法：每次选择优先级最高的合并
+    # 特殊token直接映射，不参与BPE合并
     def encode(self, text: str) -> list[int]:
         bs = text.encode("utf-8", self.errors)
         pre_tokens = self._pre_token(bs)
@@ -119,10 +148,13 @@ class BpeTokenizer:
                 token_ids.append(self.vcab2id[pre_token])
                 continue
 
+            # 初始化为单个字节的token
             tokens = tuple(bytes([c]) for c in pre_token)
+            # 贪心合并：每次合并rank最小的pair
             while len(tokens) > 1:
                 pairs = list(zip(tokens[:-1], tokens[1:]))
                 # Find the merge with the lowest rank
+                # 找到最小rank的pair
                 rank = float("inf")
                 best_pair_idx = -1
                 for i, pair in enumerate(pairs):
@@ -151,8 +183,11 @@ class BpeTokenizer:
             yield from self.encode(text)
 
     def decode(self, token_ids: list[int]) -> str:
+        # 1. token ID -> 字节串
         vcabs = [self.id2vcab.get(i, b"\xef\xbf\xbd") for i in token_ids]
+        # 2. 拼接所有字节串
         bs = b"".join(vcabs)
+        # 3. UTF-8解码
         return bs.decode("utf-8", self.errors)
 
     def save(self, out: str) -> None:
@@ -180,9 +215,10 @@ class BpeTokenizer:
         )
 
         corpus = list[bytes]()
-        with open(input_path) as f:
+        with open(input_path, encoding='utf-8') as f:
             corpus = f.read().encode("utf-8", self.errors)
 
+        # 1. 初始化词表：特殊token + 256个单字节
         for token in self.special_tokens:
             self.vcab2id[token] = len(self.vcab2id)
 
@@ -190,7 +226,7 @@ class BpeTokenizer:
             self.vcab2id[bytes([i])] = len(self.vcab2id)
 
         pre_tokens = self._pre_token(corpus)
-
+        # 2. 统计词频（重要优化）
         word_cnt: dict[tuple[bytes, ...], int] = {}
         for pre_token in pre_tokens:
             if pre_token in self.special_tokens:
@@ -203,27 +239,34 @@ class BpeTokenizer:
         if verbose:
             print(f"cnt of distinct word: {len(word_cnt)}")
 
+        # 3. 统计所有相邻token对的频率
+        # pair_cnt 实时更新，避免重复扫描整个语料
         pair_cnt = dict[tuple[bytes, bytes], int]()
         for word, cnt in word_cnt.items():
             for pair in zip(word[:-1], word[1:]):
                 pair_cnt[pair] = pair_cnt.get(pair, 0) + cnt
 
+        # 使用 update_pair_counts 增量更新，效率高
         def update_pair_counts(word: tuple[bytes, ...], pair_cnt: dict[tuple[bytes, bytes], int], cnt: int, sign=1):
             for pair in zip(word[:-1], word[1:]):
                 pair_cnt[pair] = pair_cnt.get(pair, 0) + cnt * sign
                 if pair_cnt.get(pair, 0) <= 0:
                     del pair_cnt[pair]
 
+        # 4. 迭代合并直到词表达到目标大小
         while len(self.vcab2id) < vocab_size:
             if verbose:
                 print(f"vocab_size = {len(self.vcab2id)}, target {vocab_size}")
+            # 选择频率最高的pair（频率相同时按字节值排序）
             best_pair = max(pair_cnt.keys(), key=lambda p: (pair_cnt.get(p, 0), p))
+            # 创建新token并记录合并规则
             self.vcab2id[best_pair[0] + best_pair[1]] = len(self.vcab2id)
             self.merges.append(best_pair)
 
             new_word_cnt: dict[tuple[bytes, ...], int] = {}
             merged = False
-            for word, cnt in word_cnt.items():
+            # 更新所有词的分词状态
+            for word, cnt in word_cnt.items():                
                 new_word_list = []
                 i = 0
                 while i < len(word):
@@ -236,6 +279,7 @@ class BpeTokenizer:
 
                 new_word = tuple(new_word_list)
                 if word != new_word:
+                    # 更新pair_cnt：减去旧的，加上新的
                     merged = True
                     update_pair_counts(word, pair_cnt, cnt, -1)
                     update_pair_counts(new_word, pair_cnt, cnt, 1)
