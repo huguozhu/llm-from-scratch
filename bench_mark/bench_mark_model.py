@@ -1,3 +1,17 @@
+# ==============================================================================
+# Transformer 模型端到端性能基准测试
+# ==============================================================================
+# 功能概述：
+#   测量完整 Transformer 模型的前向 + 反向传播延迟，并生成 GPU 显存快照。
+#   支持 forward-only 模式（纯推理）和完整训练模式（含反向传播和损失计算）。
+#
+# 功能特性：
+#   - 可配置模型超参数（d_model, num_heads, d_ff, vocab_size, num_layers）
+#   - 自动预热（warmup_steps），排除 GPU 初始化开销
+#   - 使用 torch.cuda.memory._record_memory_history 生成显存分析快照
+#     可在 https://pytorch.org/memory_viz 可视化加载
+#   - GPU 上自动使用 bfloat16，CPU 使用 float32
+# ==============================================================================
 import argparse
 
 from llm.transformer import Transformer, CrossEntropyLoss

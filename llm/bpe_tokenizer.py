@@ -1,3 +1,37 @@
+# ==============================================================================
+# BPE 分词器（Byte Pair Encoding Tokenizer）
+# ==============================================================================
+# 功能概述：
+#   从零实现的 BPE（字节对编码）分词器，用于将原始文本转化为 token ID 序列。
+#   BPE 是 GPT 系列模型使用的核心分词算法。
+#
+# 核心原理：
+#   1. 初始词表包含 256 个单字节 token（覆盖所有 UTF-8 字节值）+ 特殊 token
+#   2. 训练阶段：统计语料中相邻 token 对的出现频率，反复合并最高频的一对
+#      形成新 token，直到词表达到目标大小
+#   3. 编码阶段：对输入文本先做预分词（正则匹配），再在每个片段上
+#      按合并优先级（rank）反复执行最优合并，最终得到 token ID 序列
+#   4. 解码阶段：直接将 token ID 映射回字节序列再做 UTF-8 解码
+#
+# 预分词正则（GPT-2 风格）：
+#   r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s"""
+#   将文本切分为：缩写（'s, 'll 等）、单词、数字、标点、空白
+#
+# 包含功能：
+#   - train()        : 在语料上训练 BPE 词表和合并规则
+#   - encode()       : 将文本编码为 token ID 列表
+#   - decode()       : 将 token ID 列表解码为文本
+#   - save() / load(): 持久化/加载词表和合并规则（pickle 格式）
+#   - encode_iterable(): 流式编码（生成器），适合处理大规模数据
+#   - inspect_data() : 调试工具，检查训练数据的分词效果
+#
+# 数据结构：
+#   - vcab2id     : dict[bytes, int]  词表正向映射（token 字节串 -> ID）
+#   - id2vcab     : dict[int, bytes]  词表反向映射（ID -> token 字节串）
+#   - merges      : list[tuple[bytes, bytes]]  有序合并规则列表
+#   - merge_ranks : dict[tuple[bytes, bytes], int]  合并优先级（rank 越小优先级越高）
+#   - special_tokens: 特殊 token 列表，如 <|endoftext|>，在预分词时单独处理
+# ==============================================================================
 from collections.abc import Iterator
 import regex as re
 import os
@@ -7,13 +41,25 @@ from llm.args import get_parser
 
 
 class BpeTokenizer:
+    """
+    BPE 分词器：支持训练、编码、解码的完整实现。
+    """
     def __init__(self, special_tokens: list[str] | None = None, errors="replace"):
+        """
+        初始化分词器。
+
+        参数：
+            special_tokens : 特殊 token 列表（如 ["<|endoftext|>"]），会被排在词表最前面
+            errors         : UTF-8 编解码错误处理策略（默认 "replace"）
+        """
+        # GPT-2 风格的预分词正则：将文本切分为缩写、单词、数字、标点、空白
         self.pattern = r"""'(?:[sdmt]|ll|ve|re)| ?\p{L}+| ?\p{N}+| ?[^\s\p{L}\p{N}]+|\s+(?!\S)|\s"""
         self.errors = errors
-        self.vcab2id = dict[bytes, int]()
-        self.id2vcab = dict[int, bytes]()
-        self.merges = list[tuple[bytes, bytes]]()
-        self.merge_ranks = dict[tuple[bytes, bytes], int]()
+        self.vcab2id = dict[bytes, int]()                    # token 字节串 -> ID
+        self.id2vcab = dict[int, bytes]()                    # ID -> token 字节串
+        self.merges = list[tuple[bytes, bytes]]()            # 有序合并规则列表
+        self.merge_ranks = dict[tuple[bytes, bytes], int]()  # 合并对 -> 优先级 rank
+        # 特殊 token 按长度降序排列，确保较长的特殊 token 优先匹配
         self.special_tokens = sorted(
             [s.encode("utf-8", errors) for s in special_tokens] if special_tokens else [], key=len, reverse=True
         )

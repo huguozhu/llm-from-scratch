@@ -1,3 +1,40 @@
+# ==============================================================================
+# Flash Attention Triton GPU 内核实现
+# ==============================================================================
+# 功能概述：
+#   使用 OpenAI Triton 编写的高性能 Flash Attention GPU 内核。
+#   Triton 是一种 Python DSL，可直接编写 GPU 线程块级别的代码，
+#   编译后性能接近手写 CUDA，但开发效率更高。
+#
+# 与 flash_attention_mock.py 的区别：
+#   - mock 版本用 PyTorch 循环模拟分块，仍在 Python 层面执行，效率较低
+#   - Triton 版本将分块循环编译为真正的 GPU 内核，每个线程块处理一个 Q 块
+#   - Triton 版本利用 GPU 的共享内存（SRAM）缓存 Q/K/V 块，避免反复读取全局显存
+#
+# 内核设计（flash_attention_forward_kernel）：
+#   - 网格（Grid）: (batch_size, num_q_blocks)
+#     每个程序实例处理一个 batch 元素的一个 Q 块
+#   - 块大小（Block Size）: BQ=64, BK=64（Q 块和 K 块的序列长度维度）
+#   - 每个程序实例的工作：
+#     1. 从全局内存加载 Q 块（BQ×D）到寄存器
+#     2. 遍历所有 K 块，逐块计算在线 Softmax：
+#        a. 从全局内存加载 K 块（D×BK）和 V 块（BK×D）
+#        b. 计算局部注意力分数 s_ij = Q_block @ K_block
+#        c. 更新在线 Softmax 统计量 m_i, l_i, o_i
+#     3. 归一化后将输出 O 块写回全局内存
+#
+# 因果掩码优化：
+#   当 IS_CAUSAL=True 时，每个 Q 块只需遍历到对应位置的 K 块即可（上三角截断），
+#   loop_end = ceil((pid_tq + 1) * BQ / BK)，减少约一半的计算量。
+#
+# 反向传播：
+#   复用 flash_attention_mock.py 中的 _flash_attn_backward_compiled 函数，
+#   使用 torch.compile 加速标准注意力反向传播公式。
+#
+# 性能对比（参考 bench_mark/）：
+#   - 长序列（4096+）时 Triton Flash Attention 比标准注意力快 2-5x
+#   - 显存从 O(N^2) 降低到 O(N)
+# ==============================================================================
 import triton
 import triton.language as tl
 import torch

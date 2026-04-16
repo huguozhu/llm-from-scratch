@@ -1,3 +1,12 @@
+# ==============================================================================
+# SFT 训练数据集模块
+# ==============================================================================
+# 功能概述：
+#   实现 GSM8K 数学推理数据集的加载和格式化。
+#   使用 ChatML 格式模板（<|im_start|>system/user/assistant<|im_end|>）。
+#   SFTDataset：加载 GSM8K -> tokenize -> 构建 input_ids + labels
+#   labels 中 prompt 部分 mask 为 -100，只对 answer 部分计算损失。
+# ==============================================================================
 from torch.utils.data import Dataset
 import json
 from .r1_prompt import R1PromptTemplate

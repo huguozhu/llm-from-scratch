@@ -1,3 +1,36 @@
+# ==============================================================================
+# 文本生成模块（推理/Inference）
+# ==============================================================================
+# 功能概述：
+#   实现基于训练好的 Transformer 模型的自回归文本生成（Auto-Regressive Generation）。
+#   给定一个提示文本（prompt），模型逐 token 地预测下一个词，直到遇到终止符
+#   或达到最大序列长度。
+#
+# 生成策略：
+#   采用 "Temperature Scaling + Top-p (Nucleus) Sampling" 组合策略：
+#
+#   1. Temperature Scaling（温度缩放）：
+#      将 logits 除以温度系数 T，控制概率分布的平滑度：
+#        - T < 1 : 分布更尖锐，倾向于选择高概率 token（更确定性）
+#        - T = 1 : 原始分布
+#        - T > 1 : 分布更平坦，增加随机性和多样性
+#
+#   2. Top-p (Nucleus) Sampling（核采样）：
+#      按概率从高到低排序，只保留累积概率不超过 p 的 token 集合，
+#      然后在这个缩小的候选集中重新归一化并采样。
+#      相比 Top-k 采样，Top-p 的候选集大小是动态的，更灵活。
+#
+# 生成流程：
+#   1. 加载训练好的模型检查点和 BPE 分词器
+#   2. 将 prompt 编码为 token ID 序列
+#   3. 循环生成：
+#      a. 截取最后 max_seq_len 个 token 作为输入（滑动窗口）
+#      b. 模型前向传播得到 logits
+#      c. 取最后一个位置的 logits -> 温度缩放 -> Softmax -> Top-p 过滤 -> 采样
+#      d. 将采样结果追加到序列末尾
+#      e. 如果生成了 <|endoftext|> 则停止
+#   4. 将生成的 token ID 解码为文本
+# ==============================================================================
 from torch.optim import AdamW
 from llm.args import get_parser
 from llm.checkpoint import load_checkpoint
@@ -8,9 +41,24 @@ import os
 
 
 def generate(prompt: str) -> tuple[str, list[int]]:
+    """
+    根据提示文本生成续写内容。
+
+    参数：
+        prompt : 用户提供的提示文本
+
+    返回：
+        (generated_text, generated_token_ids) : 生成的文本和对应的 token ID 列表
+
+    生成参数由命令行参数控制：
+        --temperature : 温度系数（默认 0.8）
+        --top_p       : Top-p 采样阈值（默认 0.9）
+        --max_seq_len : 最大生成长度（默认 512）
+    """
     parser = get_parser()
     args = parser.parse_args()
 
+    # 1. 构建模型并加载检查点
     model = Transformer(
         d_model=args.d_model,
         num_heads=args.num_heads,
