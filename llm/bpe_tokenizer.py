@@ -368,13 +368,13 @@ if __name__ == "__main__":
     tokenizer.save(args.tokenizer_checkpoint)
     print(f"vocab size: {len(tokenizer.vcab2id)}")
 
-    with open(args.train_source_file) as f:
+    with open(args.train_source_file, encoding='utf-8') as f:
         print("starting encoding train text to token ids")
         token_ids = tokenizer.encode(f.read())
         print("start persisting train tokens ids")
         np.save(args.train_data, np.array(token_ids))
 
-    with open(args.valid_source_file) as f:
+    with open(args.valid_source_file, encoding='utf-8') as f:
         print("starting encoding valid text to token ids")
         token_ids = tokenizer.encode(f.read())
         print("start persisting valid tokens ids")
