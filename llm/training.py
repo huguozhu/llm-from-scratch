@@ -33,9 +33,9 @@
 # ==============================================================================
 import torch
 import numpy as np
-from llm.args import get_parser
-from llm.checkpoint import save_checkpoint
-from llm.transformer import (
+from args import get_parser
+from checkpoint import save_checkpoint
+from transformer import (
     CrossEntropyLoss,
     Transformer,
     AdamW,
